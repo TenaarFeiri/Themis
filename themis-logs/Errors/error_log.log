@@ -1,0 +1,35 @@
+[24-Apr-2025 14:33:07 Europe/Berlin] Database connection established successfully. (This is a test log)
+[24-Apr-2025 14:38:01 Europe/Berlin] Database connection established successfully. (This is a test log)
+[24-Apr-2025 14:39:02 Europe/Berlin] PHP Fatal error:  Database connection established successfully. (This is a test log) in D:\Dev\http\themis\init.php on line 130
+[24-Apr-2025 14:39:30 Europe/Berlin] PHP Warning:  Database connection established successfully. (This is a test log) in D:\Dev\http\themis\init.php on line 130
+[24-Apr-2025 15:30:20 Europe/Berlin] PHP Fatal error:  Uncaught TypeError: error_log(): Argument #2 ($message_type) must be of type int, string given in D:\Dev\http\themis\init.php:154
+Stack trace:
+#0 D:\Dev\http\themis\init.php(154): error_log('Autoloader: Cou...', 'E_USER_NOTICE', 'A test!')
+#1 {main}
+  thrown in D:\Dev\http\themis\init.php on line 154
+[24-Apr-2025 15:30:48 Europe/Berlin] PHP Fatal error:  Uncaught TypeError: error_log(): Argument #2 ($message_type) must be of type int, array given in D:\Dev\http\themis\init.php:154
+Stack trace:
+#0 D:\Dev\http\themis\init.php(154): error_log('Autoloader: Cou...', Array)
+#1 {main}
+  thrown in D:\Dev\http\themis\init.php on line 154
+[24-Apr-2025 15:31:14 Europe/Berlin] Autoloader: Could not load file for class: E_USER_NOTICE - Expected path: A test!
+[24-Apr-2025 16:30:24 Europe/Berlin] PHP Warning:  Undefined variable $headersMissing in D:\Dev\http\themis\init.php on line 170
+[24-Apr-2025 16:30:24 Europe/Berlin] Missing required header(s): HTTP_X_SECONDLIFE_OWNER_NAME
+[24-Apr-2025 16:31:22 Europe/Berlin] PHP Warning:  Undefined variable $headersMissing in D:\Dev\http\themis\init.php on line 173
+[24-Apr-2025 16:31:22 Europe/Berlin] Missing required header(s): HTTP_X_SECONDLIFE_OWNER_NAME
+[24-Apr-2025 16:31:49 Europe/Berlin] PHP Warning:  Undefined variable $headersMissing in D:\Dev\http\themis\init.php on line 174
+[24-Apr-2025 16:31:49 Europe/Berlin] Missing required header(s): HTTP_X_SECONDLIFE_OWNER_NAME
+[24-Apr-2025 16:34:07 Europe/Berlin] PHP Fatal error:  Uncaught TypeError: rtrim(): Argument #1 ($string) must be of type string, array given in D:\Dev\http\themis\init.php:178
+Stack trace:
+#0 D:\Dev\http\themis\init.php(178): rtrim(Array, ', ')
+#1 {main}
+  thrown in D:\Dev\http\themis\init.php on line 178
+[24-Apr-2025 16:34:17 Europe/Berlin] Missing required header(s): HTTP_X_SECONDLIFE_OWNER_NAME
+[24-Apr-2025 16:34:27 Europe/Berlin] Missing required header(s): HTTP_X_SECONDLIFE_REGION, HTTP_X_SECONDLIFE_OWNER_KEY, HTTP_X_SECONDLIFE_OWNER_NAME
+[24-Apr-2025 17:37:55 Europe/Berlin] Missing required header(s): 
+[24-Apr-2025 18:04:36 Europe/Berlin] PHP Warning:  Undefined variable $srcPath in D:\Dev\http\themis\bootstrap.php on line 120
+[24-Apr-2025 18:04:36 Europe/Berlin] Autoloader: Could not load file for class: Themis\Controller\MasterController - Expected path: Controller/MasterController.php
+[24-Apr-2025 18:04:36 Europe/Berlin] PHP Fatal error:  Uncaught Error: Class "Themis\Controller\MasterController" not found in D:\Dev\http\themis\bootstrap.php:209
+Stack trace:
+#0 {main}
+  thrown in D:\Dev\http\themis\bootstrap.php on line 209
