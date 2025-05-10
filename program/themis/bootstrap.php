@@ -2,8 +2,8 @@
     namespace Themis\Core;
 
     // --- Includes ---
-    use Themis\Database\Database;
     use Themis\Controller\MasterController;
+    use Exception;
     // --- End Includes ---
 
     // --- Headers ---
@@ -20,8 +20,14 @@
     const ERROR_LOG_DIRECTORY = 'Errors';
     const ERROR_LOG_FILE_NAME = 'error_log';
     const MAXIMUM_ERROR_LOG_FILE_SIZE = 200; // In MB
+    const MODULE_NAMES = [ // Map error codes to module names
+        0 => 'Unknown',
+        1 => 'MasterController',
+        2 => 'Database'
+    ];
 
     // Error Log Messages
+    const ERROR_MESSAGE_GENERIC = "An error occurred. Code: %s";
     const ERROR_MESSAGE_DIR_NOT_WRITEABLE = "Error log directory is not writeable: %s. Please check permissions.";
     const ERROR_MESSAGE_DIR_FAILED_TO_CREATE = "Failed to create error log directory: %s. Please check permissions.";
     const ERROR_MESSAGE_ERROR_LOG_DELETED_OLDEST = "Deleted oldest error log file: %s";
@@ -137,7 +143,6 @@
             error_log(sprintf(ERROR_MESSAGE_AUTOLOADER_FILE_NOT_FOUND, $class, $file));
         }
     });
-
      // --- Debug Overrides ---
      // Headers and other system overrides for debugging/development.
      // Lets us actually access the system from the browser.
@@ -158,8 +163,8 @@
         foreach($debugHeaders as $key => $value) {
             $_SERVER[$key] = $value;
         }
-        print_r($_SERVER); // For debugging purposes.
      }
+    $requestActions = DEBUG ? $_GET : $_POST; // Use GET for debugging, POST for production.
      // --- End Debug Overrides ---
     
     // --- Authentication ---
@@ -205,4 +210,13 @@
     // --- End Authentication ---
 
     // --- Execution ---
-    $masterController = new MasterController(); // This works! \o/
+    try {
+        $masterController = new MasterController($_SERVER, $requestActions, DEBUG);
+    } catch (Exception $e) {
+        error_log(MODULE_NAMES[$e->getCode()] . ": " . $e->getMessage());
+        $httpCode = http_response_code();
+        if ($httpCode !== 200 && $httpCode !== 201) {
+            http_response_code(500); // Internal Server Error
+        }
+        exit(sprintf(ERROR_MESSAGE_GENERIC, $e->getCode()));
+    }
