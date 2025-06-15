@@ -4,7 +4,5 @@
     interface MasterControllerInterface
     {
         public function __construct(array $headerData, array $requestData, bool $inDebugMode);
-        public function getRequestData() : array;
-        public function getHeaderData() : array;
     }
     
