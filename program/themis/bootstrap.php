@@ -212,6 +212,9 @@
     // --- Execution ---
     try {
         $masterController = new MasterController($_SERVER, $requestActions, DEBUG);
+        $masterController->run();
+        // If everything is successful, we return a 200 OK response.
+        http_response_code(200); // OK
     } catch (Exception $e) {
         error_log(MODULE_NAMES[$e->getCode()] . ": " . $e->getMessage());
         $httpCode = http_response_code();
