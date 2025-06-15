@@ -7,5 +7,4 @@
         public function storeData($key, $value): void;
         public function getAllData(): array;
         public function readData($key) : mixed;
-        public function inDebugMode() : bool;
     }
