@@ -5,13 +5,10 @@
     class SystemDataStorage implements SystemDataStorageInterface
     {
         private array $data = []; // Contains other data points with relevant data. (any type, remember typechecking)
-        private bool $inDebugMode = false;
-        public function __construct(bool $inDebugMode = false)
+        public bool $inDebugMode = false;
+        public function __construct()
         {
-            $this->inDebugMode = $inDebugMode;
-            if ($inDebugMode) {
-                echo "SystemDataStorage initialized.", PHP_EOL;
-            }
+            // We'll remove the constructor if we don't need it later.
         }
 
         public function storeData($key, $value): void
@@ -33,10 +30,5 @@
                 echo "Reading data: $key", PHP_EOL;
             }
             return $this->data[$key] ?? null; // Return null if key doesn't exist
-        }
-
-        public function inDebugMode() : bool
-        {
-            return $this->inDebugMode;
         }
     }
