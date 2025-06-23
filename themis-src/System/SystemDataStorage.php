@@ -18,17 +18,11 @@
 
         public function getAllData(): array
         {
-            if ($this->inDebugMode) {
-                echo "Getting all data.", PHP_EOL;
-            }
             return $this->data;
         }
 
         public function readData($key) : mixed
         {
-            if ($this->inDebugMode) {
-                echo "Reading data: $key", PHP_EOL;
-            }
             return $this->data[$key] ?? null; // Return null if key doesn't exist
         }
     }
