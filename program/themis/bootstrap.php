@@ -152,11 +152,11 @@
             'HTTP_X_SECONDLIFE_SHARD' => 'Production', // SL shard will always be production or this MUST fail.
             'HTTP_X_SECONDLIFE_REGION' => 'Starfall Roleplay',
             'HTTP_USER_AGENT' => 'Second Life LSL/srv.version (http://secondlife.com)',
-            'HTTP_X_SECONDLIFE_OWNER_KEY' => '5675c8a0-430b-4281-af36-60734935fad3',
-            'HTTP_X_SECONDLIFE_OWNER_NAME' => 'Tenaar Feiri',
+            'HTTP_X_SECONDLIFE_OWNER_KEY' => '59ee7fce-5203-4d8c-b4db-12cb50ad2c10',
+            'HTTP_X_SECONDLIFE_OWNER_NAME' => 'Symphicat Resident',
             'HTTP_X_THEMIS_TOKEN' => hash_hmac(
-                'sha256', 
-                '5675c8a0-430b-4281-af36-60734935fad3', 
+                'sha256',
+                '59ee7fce-5203-4d8c-b4db-12cb50ad2c10',
                 $themisSecret
             )
         ];
@@ -211,10 +211,16 @@
 
     // --- Execution ---
     try {
+        if (DEBUG) {
+            ob_start();
+        }
         $masterController = new MasterController($_SERVER, $requestActions, DEBUG);
         $masterController->run();
         // If everything is successful, we return a 200 OK response.
         http_response_code(200); // OK
+        if (DEBUG) {
+            ob_end_flush(); // Flush the output buffer
+        }
     } catch (Exception $e) {
         error_log(MODULE_NAMES[$e->getCode()] . ": " . $e->getMessage());
         $httpCode = http_response_code();
