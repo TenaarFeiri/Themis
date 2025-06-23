@@ -72,7 +72,7 @@
                 }
             }
             
-            $arrayProcessor = new ArrayProcessor($this->systemData->inDebugMode);
+            $arrayProcessor = new ArrayProcessor($this->systemData);
         }
 	}
 
