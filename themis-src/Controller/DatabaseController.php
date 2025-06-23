@@ -70,16 +70,18 @@
                     echo "Method '$method' executed successfully.", PHP_EOL;
                 }
                 if (!is_array($result)) {
-                    if ($method !== 'select') {
-                        $dbOperator->rollBack($dbOperator);
+                    if (is_bool($result) && $result === false) {
+                        $dbOperator->rollback($dbOperator);
+                        return [1, $result, "Update failed."]; // 1 = error, $result = boolean result
                     }
-                    error_log("Method '$method' did not return an array.", 0);
-                    throw new Exception("Method '$method' did not return an array.", 1);
                 }
-
                 if ($method !== 'select') {
                     $dbOperator->commit($dbOperator);
                 }
+                if ($this->systemData->inDebugMode) {
+                    echo "Database operation completed successfully.", PHP_EOL;
+                }
+                return [0, false, $result]; // 0 = success, false = do not repeat, $result = data
             } catch (PDOException $e) {
                 throw new Exception("Database operation failed: " . $e->getMessage(), 1);
             }
