@@ -16,7 +16,7 @@ class DatabaseOperator implements DatabaseOperatorInterface
     // --- Properties ---
     private SystemDataStorage $sysData;
     private ?PDO $pdo = null;
-    private ?string $transactionOwnerHash = null;
+    private int $transactionOwnerId = 0;
     private array $methodExpectedArgs = [
         'select' => ['select', 'from', 'where', 'equals', 'options'],
         'update' => ['table', 'columns', 'values', 'where', 'equals'],
@@ -92,15 +92,21 @@ class DatabaseOperator implements DatabaseOperatorInterface
 
     public function beginTransaction(object $owner) : void
     {
+        if ($this->sysData->inDebugMode) {
+            echo "[DEBUG] beginTransaction: owner class = ", get_class($owner), ", id = ", spl_object_id($owner), PHP_EOL;
+        }
         if ($this->startOrGetPDO()) { // Lazily initialise PDO if not already done
             if ($this->pdo->inTransaction()) {
-                // If we are already in a transaction, we don't need to start a new one.
+                // Already in a transaction, do not overwrite the owner id
                 if ($this->sysData->inDebugMode) {
                     echo self::WARNING_PDO_IN_TRANSACTION, PHP_EOL;
                 }
             } else {
+                $this->transactionOwnerId = spl_object_id($owner);
+                if ($this->sysData->inDebugMode) {
+                    echo "[DEBUG] transactionOwnerId set in beginTransaction: ", $this->transactionOwnerId, PHP_EOL;
+                }
                 $this->pdo->beginTransaction();
-                $this->transactionOwnerHash = spl_object_hash($owner);
             }
             // Confirm we are in a transaction
             if ($this->pdo->inTransaction()) {
@@ -120,22 +126,23 @@ class DatabaseOperator implements DatabaseOperatorInterface
 
     public function commit(object $owner) : void
     {
-        if ($this->transactionOwnerHash === null) {
-            // If there is no transaction owner hash, we cannot commit.
+        if ($this->transactionOwnerId === 0) {
+            // If there is no transaction owner id, we cannot commit.
             throw new Exception(self::ERROR_PDO_TRANSACTION_WITHOUT_OWNER, 1);
         }
         if (!$this->pdo || !$this->pdo->inTransaction()) {
             throw new Exception(self::ERROR_PDO_NO_TRANSACTION_COMMIT, 1);
         }
-        if ($this->transactionOwnerHash !== spl_object_hash($owner)) {
+        if ($this->transactionOwnerId !== spl_object_id($owner)) {
             throw new Exception(self::ERROR_PDO_TRANSACTION_OWNER_WRONG, 1);
         }
 
         $this->pdo->commit();
         if ($this->sysData->inDebugMode) {
             echo "Transaction committed successfully.", PHP_EOL;
+            echo "[DEBUG] transactionOwnerId set to 0 in commit", PHP_EOL;
         }
-        $this->transactionOwnerHash = null; // Clear the transaction owner hash after commit.
+        $this->transactionOwnerId = 0; // Clear the transaction owner id after commit.
     }
 
     public function rollBack(object $owner) : void
@@ -143,15 +150,16 @@ class DatabaseOperator implements DatabaseOperatorInterface
         if (!$this->pdo || !$this->pdo->inTransaction()) {
             throw new Exception(self::ERROR_PDO_NO_TRANSACTION_COMMIT, 1);
         }
-        if ($this->transactionOwnerHash !== spl_object_hash($owner)) {
+        if ($this->transactionOwnerId !== spl_object_id($owner)) {
             throw new Exception(self::ERROR_PDO_TRANSACTION_OWNER_WRONG, 1);
         }
 
         $this->pdo->rollBack();
         if ($this->sysData->inDebugMode) {
             echo "Transaction rolled back successfully.", PHP_EOL;
+            echo "[DEBUG] transactionOwnerId set to 0 in rollBack", PHP_EOL;
         }
-        $this->transactionOwnerHash = null; // Clear the transaction owner hash after commit.
+        $this->transactionOwnerId = 0; // Clear the transaction owner id after rollback.
         // Then, for safety, kill PDO.
         $this->pdo = null;
     }
@@ -159,11 +167,11 @@ class DatabaseOperator implements DatabaseOperatorInterface
     public function select(...$args) : array
     {
         $expectedArgs = $this->methodExpectedArgs['select'];
-        if (count($args) < count($expectedArgs)) {
+        if (count($args) !== count($expectedArgs)) {
             error_log("Method 'select' does not have all required arguments.", 0);
             throw new Exception("Method 'select' does not have all required arguments.", 1);
         }
-        $assocArgs = $args[0] ?? [];
+        $assocArgs = $args ?? [];
         $arrayProcessor = new ArrayProcessor($this->sysData);
         if (!$arrayProcessor->isAssociative($assocArgs)) {
             error_log("Method 'select' arguments are not associative.", 0);
@@ -276,11 +284,11 @@ class DatabaseOperator implements DatabaseOperatorInterface
     {
         // Check if the method has all expected arguments from $this->methodExpectedArgs.
         $expectedArgs = $this->methodExpectedArgs['update'];
-        if (count($args) < count($expectedArgs)) {
+        if (count($args) !== count($expectedArgs)) {
             error_log("Method 'update' does not have all required arguments.", 0);
             throw new Exception("Method 'update' does not have all required arguments.", 1);
         }
-        $assocArgs = $args[0] ?? [];
+        $assocArgs = $args ?? [];
         $arrayProcessor = new ArrayProcessor($this->sysData);
         if (!$arrayProcessor->isAssociative($assocArgs)) {
             error_log("Method 'update' arguments are not associative.", 0);
@@ -374,11 +382,11 @@ class DatabaseOperator implements DatabaseOperatorInterface
     {
         // Check if the method has all expected arguments from $this->methodExpectedArgs.
         $expectedArgs = $this->methodExpectedArgs['insert'];
-        if (count($args) < count($expectedArgs)) {
+        if (count($args) !== count($expectedArgs)) {
             error_log("Method 'insert' does not have all required arguments.", 0);
             throw new Exception("Method 'insert' does not have all required arguments.", 1);
         }
-        $assocArgs = $args[0] ?? [];
+        $assocArgs = $args ?? [];
         $arrayProcessor = new ArrayProcessor($this->sysData);
         if (!$arrayProcessor->isAssociative($assocArgs)) {
             error_log("Method 'insert' arguments are not associative.", 0);
