@@ -1,8 +1,7 @@
 <?php
-	namespace Themis\Database;
+	namespace Themis\System;
 
 	// Database connection class for Themis.
-	use Themis\System\SystemDataStorage;
 	use PDO;
 	use PDOException;
     class DatabaseConnector
