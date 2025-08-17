@@ -79,6 +79,7 @@ class UserValidation {
             $currentName = $slHeaders['HTTP_X_SECONDLIFE_OWNER_NAME'];
             if ($user[0]['player_name'] !== $currentName) {
                 $this->updateUserName($uuid, $currentName);
+                $user[0]['player_name'] = $currentName;
             }
             
         } catch (DatabaseOperatorException $e) {
@@ -87,6 +88,7 @@ class UserValidation {
             }
             return false;
         }
+        $this->dataContainer->set('userData', $user[0]);
         return true;
     }
 
