@@ -9,13 +9,15 @@ use Themis\System\DataContainer;
 use Themis\System\DatabaseOperator;
 use Themis\System\DatabaseConnector;
 
+use Themis\Character\Character;
+
 use Themis\User\UserValidation;
 use Themis\User\UserLegacyImport;
 
 use Exception;
 
 class Init {
-    private bool $debug = true;
+    public static bool $debug = true;
     private string $version = '0.0.1';
     private string $name = 'Themis RP System';
     private ThemisContainer $container;
@@ -23,7 +25,8 @@ class Init {
     const SYSTEM_CLASSES = [
         'userValidate' => UserValidation::class,
         'databaseOperator' => DatabaseOperator::class,
-        'userLegacyImport' => UserLegacyImport::class
+        'userLegacyImport' => UserLegacyImport::class,
+        'character' => Character::class
     ];
 
     const ALLOWED_CLASSES = [
@@ -32,17 +35,18 @@ class Init {
         // AND be in this list.
         // One example can be 'class=character' which would be a class that handles character data.
         // After that, it will also define a method=something, which the class will resolve.
+        "character"
     ];
 
     public function __construct() {
-        if ($this->debug) {
-            // Report all errors, except notices.
+        // Report all errors, except notices, if debug is enabled
+        if (self::$debug) {
             error_reporting(E_ALL & ~E_NOTICE);
             ini_set('display_errors', '1');
             ini_set('display_startup_errors', '1');
             echo "Themis RP System initialized with debug mode enabled.\n";
         }
-        
+
         $this->container = new ThemisContainer();
         $this->dataContainer = new DataContainer();
         // Set up the container with default bindings.
@@ -56,9 +60,9 @@ class Init {
         }
 
         // Now give the DataContainer the debug flag and version and headers.
-        $this->dataContainer->set('debug', $this->debug);
+        $this->dataContainer->set('debug', self::$debug);
         $this->dataContainer->set('version', $this->version);
-        switch ($this->debug) {
+        switch (self::$debug) {
             case true:
                 $themisSecret = getenv('THEMIS_SECRET') ?: '001'; // Default value for testing
                 $debugHeaders = [
@@ -76,16 +80,52 @@ class Init {
                 $this->dataContainer->set('headers', $debugHeaders);
                 $this->dataContainer->set('themisSecret', $themisSecret);
                 break;
-            
             default:
                 $this->dataContainer->set('headers', getallheaders());
                 break;
         }
 
-        $this->validateUser();
+        try {
+            $this->validateUser();
+            $post = self::$debug ? $_GET : $_POST; // If debug mode, use GET data (we're using browser URLs)
+
+            switch (self::$debug) {
+                case true:
+                    $postOrGet = "GET";
+                    echo PHP_EOL, "Debug mode: Using GET data.", PHP_EOL;
+                    print_r($post);
+                    break;
+                default:
+                    $postOrGet = "POST";
+            }
+            if (empty($post)) {
+                throw new Exception("No {$postOrGet} data received.");
+            }
+
+            $this->dataContainer->set('module', $post['module'] ?? null);
+            $this->dataContainer->set('cmd', $post['cmd'] ?? null);
+
+            if (!in_array($this->dataContainer->get('module'), self::ALLOWED_CLASSES)) {
+                throw new Exception("Unknown module.");
+            }
+
+            $module = $this->container->get($this->dataContainer->get('module'));
+            $class = self::SYSTEM_CLASSES[$this->dataContainer->get('module')];
+            if (!$module instanceof $class) {
+                throw new Exception("Module is not an instance of {$class}.");
+            }
+
+        } catch (Exception $e) {
+            themis_error_log($e->__toString());
+            http_response_code(400); // Bad Request
+            exit();
+        }
+
+        http_response_code(200);
     }
 
     private function validateUser(): void {
+
         $userValidation = $this->container->get('userValidate');
         // Isolate all Second Life headers.
         $headers = $this->dataContainer->get('headers');
@@ -95,20 +135,17 @@ class Init {
 
         // Kick that to our data container as a whole array.
         $this->dataContainer->set('slHeaders', $slHeaders);
-        print_r($this->dataContainer->get('slHeaders'));
 
         $userExists = $userValidation->checkUserExists();
+
         if (!$userExists) {
-            // Registration logic here.
-        } else {
-            // User exists, proceed with validation.
-            if ($this->debug) {
-                exit("VALIDATED SUCCESSFULLY");
-            }
-            $isValid = $userValidation->validateUser($slHeaders);
-            if (!$isValid) {
-                // Handle invalid user case.
-            }
+            throw new Exception("Could not verify user, somehow we ended up here. This should not be possible; a user would have been registered during validation.");
+        }
+
+        switch (self::$debug) {
+            case true:
+                echo PHP_EOL, "User exists, proceeding with validation.", PHP_EOL;
+                break;
         }
     }
 
@@ -179,6 +216,9 @@ function themis_error_log(string $message): void {
     // Prepend date/time to message
     $entry = '[' . date('Y-m-d H:i:s') . '] ' . $message . PHP_EOL;
     error_log($entry, 3, $logFile);
+    if (Init::$debug) {
+        echo PHP_EOL, "ERROR (debug msg): ", PHP_EOL, $entry, PHP_EOL;
+    }
 }
 
 try {
