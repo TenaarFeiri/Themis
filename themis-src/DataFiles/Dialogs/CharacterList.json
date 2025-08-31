@@ -1,0 +1,50 @@
+{
+    "title": "Character Menu",
+    "options": [
+        {
+            "label": "null",
+            "id": 0,
+            "action": "module=character&loadCharacter=%s"
+        },
+        {
+            "label": "null",
+            "id": 0,
+            "action": "module=character&loadCharacter=%s"
+        },
+        {
+            "label": "null",
+            "id": 0,
+            "action": "module=character&loadCharacter=%s"
+        },
+        {
+            "label": "null",
+            "id": 0,
+            "action": "module=character&loadCharacter=%s"
+        },
+        {
+            "label": "null",
+            "id": 0,
+            "action": "module=character&loadCharacter=%s"
+        },
+        {
+            "label": "null",
+            "id": 0,
+            "action": "module=character&loadCharacter=%s"
+        },
+        {
+            "label": "null",
+            "id": 0,
+            "action": "module=character&loadCharacter=%s"
+        },
+        {
+            "label": "null",
+            "id": 0,
+            "action": "module=character&loadCharacter=%s"
+        },
+        {
+            "label": "null",
+            "id": 0,
+            "action": "module=character&loadCharacter=%s"
+        }
+    ]
+}

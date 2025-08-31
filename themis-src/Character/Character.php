@@ -11,16 +11,8 @@ use Themis\Utils\StringUtils;
 
 use Exception;
 use JsonException;
-
-class CharacterException extends Exception {}
-class CharacterImportException extends Exception {
-    protected $message = "Character import error occurred: %s";
-
-    public function __construct(string $message) {
-        $this->message = sprintf($this->message, $message);
-        parent::__construct($this->message);
-    }
-}
+use Themis\Utils\Exceptions\CharacterException;
+use Themis\Utils\Exceptions\CharacterImportException;
 class Character {
     private ?ThemisContainer $container;
     private ?DataContainer $dataContainer;
@@ -42,10 +34,10 @@ class Character {
     ];
 
     private array $defaultCharacterSettingsTemplate = [
-        "color" => "<255,255,255>", // Text colour
+        "color" => "255,255,255", // Text colour
         "opacity" => 1.0, // Fully opaque
         "attach_point" => "head", // Attachment point, head
-        "position" => "<0,0,0>", // Offset from attachment point.
+        "position" => "0,0,0", // Offset from attachment point.
         "afk-ooc" => 0, // 0 = present, 1 = ooc, 2 = afk
         "afk-msg" => "", // Display message when AFK. Default to empty.
         "ooc-msg" => "", // Display message when OOC. Default to empty.
@@ -68,17 +60,19 @@ class Character {
             throw new CharacterException("DataContainer is not bound in ThemisContainer.");
         }
         $this->dataContainer = $container->get('dataContainer');
-        if (!$this->dataContainer->has('cmd') && !$this->dataContainer->has('importing')) {
-            throw new CharacterException("Command data is not set in DataContainer.");
-        }
-        if ($this->dataContainer->has('importing')) {
-            $this->isImporting = $this->dataContainer->get('importing') ?? false;
-        }
         $this->dbOperator = $container->get('databaseOperator');
     }
 
     public function run(): array {
         return [];
+    }
+
+    public function setImportState(bool $state): void {
+        $this->isImporting = $state;
+    }
+
+    public function isImporting(): bool {
+        return $this->isImporting;
     }
 
     public function importLegacyCharacters(array $legacyCharacters): bool {
@@ -91,17 +85,155 @@ class Character {
         if (count($legacyCharacters) === 0) {
             throw new CharacterImportException("List empty. No legacy characters to import. Why are we here? This shouldn't have happened.");
         }
+        $db = $this->dbOperator;
+        $titlerData = $this->defaultCharacterTitlerTemplate;
+        $settingsData = $this->defaultCharacterSettingsTemplate;
+        
+        // Now loop through legacy characters to format and insert their data.
+        // We should have received a multidimensional array of at least 2 levels (e.g [0][0]).
+        // If not, bail.
+        if (!is_array($legacyCharacters) || !isset($legacyCharacters[0]) || !is_array($legacyCharacters[0])) {
+            throw new CharacterImportException("Invalid legacy character data format.");
+        }
+        $db->useConnection("default");
+        $db->beginTransaction();
+        foreach ($legacyCharacters as $data) {
+            $parsedConstants = explode("=>", $data['constants']);
+            $parsedTitler = explode("=>", $data['titles']);
+
+            $characterArray = $titlerData; // Start with default titler data
+            $characterArray['Name'] = $parsedTitler[0];
+            $characterArray['Species'] = $parsedTitler[1];
+            $characterArray['Mood'] = $parsedTitler[2];
+            $characterArray['Status'] = $parsedTitler[3] . "\n" . $parsedTitler[4];
+            $characterArray['Scent'] = $parsedTitler[5];
+            $characterArray['Currently'] = $parsedTitler[6];
+            $finalArray = [];
+
+            $finalArray[$parsedConstants[0]] = $characterArray['Name'];
+            $finalArray[$parsedConstants[1]] = $characterArray['Species'];
+            $finalArray[$parsedConstants[2]] = $characterArray['Mood'];
+            $finalArray[$parsedConstants[3]] = $characterArray['Status'];
+            $finalArray[$parsedConstants[5]] = $characterArray['Scent'];
+            $finalArray[$parsedConstants[6]] = $characterArray['Currently'];
+            $finalArray["template"] = $characterArray['template'];
+
+            $legacySettings = explode("=>", $data['settings']);
+            $characterSettings = $settingsData;
+            $characterSettings['color'] = $legacySettings[0];
+            $characterSettings['opacity'] = $legacySettings[1];
+
+            $this->createCharacter(array_values($finalArray)[0], $finalArray, $characterSettings, $characterSettings['attach_point'], (int)$data['character_id']);
+        }
+
+        $db->commitTransaction(); // Commit at the end of the import.
         return true;
     }
 
-    private function createCharacter(string $name, int $attach_point = 0, int $legacy = 0): array {
-        $character = $this->defaultCharacterTitlerTemplate;
-        $settings = $this->defaultCharacterSettingsTemplate;
-        if ($attach_point !== 0) {
+    private function createCharacter(string $name, array $titlerData = [], array $settingsData = [], string $attach_point = "head", int $legacy = 0): void {
+        switch ($this->isImporting) {
+            case false:
+                if (!$this->dataContainer->has('cmd')) {
+                    throw new CharacterException("Command data is not set in DataContainer.");
+                }
+                break;
+        }
+        $character = [];
+        $settings = [];
+        
+        // I could've used a ternary here but I prefer the verbosity of the switch.
+        switch ($titlerData) {
+            case []:
+                $character = $this->defaultCharacterTitlerTemplate;
+                break;
+            default:
+                $character = $titlerData;
+                break;
+        }
+
+        switch ($settingsData) {
+            case []:
+                $settings = $this->defaultCharacterSettingsTemplate;
+                break;
+            default:
+                $settings = $settingsData;
+                break;
+        }
+
+        $stats = $this->defaultCharacterStatsTemplate; // Stats are always default for new characters.
+
+        if ($attach_point !== "head") {
             $settings['attach_point'] = $attach_point;
         }
         $character[0] = $name;
-        return $character;
+        try {
+            $character = json_encode($character, JSON_THROW_ON_ERROR);
+            $settings = json_encode($settings, JSON_THROW_ON_ERROR);
+            $stats = json_encode($stats, JSON_THROW_ON_ERROR);
+        } catch (JsonException $e) {
+            throw $e;
+        }
+
+        $db = $this->dbOperator;
+        if (!$db->inTransaction() && !$this->isImporting) {
+            $db->beginTransaction();
+        }
+        $playerId = $this->dataContainer->get('userData')['player_id'];
+        // insert(string $into, array $columns, array $values)
+        $db->insert(
+            "player_characters",
+            // Rows 
+            [   
+                "player_id",
+                "character_name", 
+                "character_titler",
+                "character_stats",
+                "character_options",
+                "legacy"
+            ],
+            // Values
+            [
+                $playerId,
+                $name,
+                $character,
+                $stats,
+                $settings,
+                ($legacy < 0 ? 0 : $legacy)
+            ]
+        );
+
+        if(!$this->isImporting) {
+            // If we're importing a legacy character, we're probably doing it in bulk.
+            // Only commit normal transactions immediately, the import method will commit when done.
+            // Furthermore, if we're not importing then we had a manual new character creation, so
+            // we will also call $this->loadCharacter($characterId); using the new character ID we just generated in this transaction
+            $pdo = $this->dbOperator->getPdo();
+            $characterId = (int)$pdo->lastInsertId();
+            if ($characterId !== 0 && is_int($characterId)) {
+                $this->loadCharacter($characterId);
+            }
+            $db->commitTransaction();
+        }
+    }
+
+    private function findAttachPoint(string $attachPoint): int | false {
+        if (!$this->dataContainer->has(self::ATTACH_POINTS_FILE)) {
+            $this->dataContainer->loadFile(self::ATTACH_POINTS_FILE);
+        }
+        $attachmentPoints = $this->dataContainer->getFileData(self::ATTACH_POINTS_FILE);
+        
+        if (!isset($attachmentPoints[$attachPoint])) {
+            if ($this->dataContainer->get('debug')) {
+                echo "Attachment point '{$attachPoint}' not found in attachment points file.\n";
+            }
+            return false; // Attachment point not found
+        } elseif (!is_int($attachmentPoints[$attachPoint])) {
+            if ($this->dataContainer->get('debug')) {
+                throw new Exception("Attachment point '{$attachPoint}' is not an integer in attachment points file.");
+            }
+            return false; // Attachment point is not an integer
+        }
+        return $attachmentPoints[$attachPoint];
     }
 
     private function loadCharacter(int $characterId): string {
@@ -165,7 +297,6 @@ class Character {
         }
 
         // When character data has been retrieved...
-        $this->dataContainer->loadFile(self::ATTACH_POINTS_FILE); // Load the file containing attachment points into memory.
         if (empty($characterData[0])) {
             if ($this->dataContainer->get('debug')) {
                 echo PHP_EOL, "Debugging character data:", PHP_EOL;
@@ -202,7 +333,7 @@ class Character {
                 $characterStats
             ];
             $characterTitler = $this->populateAndOrderFields($characterTitler, $this->defaultCharacterTitlerTemplate);
-            $characterOptions = $this->populateAndOrderFields($characterOptions, $this->defaultCharacterOptionsTemplate);
+            $characterOptions = $this->populateAndOrderFields($characterOptions, $this->defaultCharacterSettingsTemplate);
             $characterStats = $this->populateAndOrderFields($characterStats, $this->defaultCharacterStatsTemplate);
 
             // If the keys don't exactly match in our arrays after populating, update as needed.
@@ -212,19 +343,19 @@ class Character {
                 if (!$db->inTransaction()) {
                     $db->beginTransaction();
                 }
-                $this->update('character_data', ['character_titler'], [json_encode($characterTitler)], ['player_id', 'character_id'], [$playerId, $characterId]);
+                $db->update('character_data', ['character_titler'], [json_encode($characterTitler)], ['player_id', 'character_id'], [$playerId, $characterId]);
             }
-            if (array_keys($characterOptions) !== array_keys($this->defaultCharacterOptionsTemplate)) {
+            if (array_keys($characterOptions) !== array_keys($this->defaultCharacterSettingsTemplate)) {
                 if (!$db->inTransaction()) {
                     $db->beginTransaction();
                 }
-                $this->update('character_data', ['character_options'], [json_encode($characterOptions)], ['player_id', 'character_id'], [$playerId, $characterId]);
+                $db->update('character_data', ['character_options'], [json_encode($characterOptions)], ['player_id', 'character_id'], [$playerId, $characterId]);
             }
             if (array_keys($characterStats) !== array_keys($this->defaultCharacterStatsTemplate)) {
                 if (!$db->inTransaction()) {
                     $db->beginTransaction();
                 }
-                $this->update('character_data', ['character_stats'], [json_encode($characterStats)], ['player_id', 'character_id'], [$playerId, $characterId]);
+                $db->update('character_data', ['character_stats'], [json_encode($characterStats)], ['player_id', 'character_id'], [$playerId, $characterId]);
             }
             
             // Commit the transaction if we started one
@@ -234,11 +365,13 @@ class Character {
 
             $attachmentPoint = &$characterOptions['attach_point']; // Reference to the attachment point; we WILL be intentionally replacing this for the client
             $attachmentPoint = strtolower($attachmentPoint);
-            $attachmentPoints = $this->dataContainer->getFileData(self::ATTACH_POINTS_FILE);
-            if (!isset($attachmentPoints[$attachmentPoint])) {
-                throw new CharacterException("Attachment point '{$attachmentPoint}' is not defined.");
+            $finalAttachmentPoint = $this->findAttachPoint($attachmentPoint); // False or integer
+            switch ($finalAttachmentPoint) {
+                case false: // Not found
+                    throw new CharacterException("Attachment point '{$attachmentPoint}' not found in attachment points file.");
+                default: // Found
+                    $attachmentPoint = $finalAttachmentPoint;
             }
-            $attachmentPoint = $attachmentPoints[$attachmentPoint]; // Replace the attachment point with the actual attachment point integer.
 
             // Finally, condense both into a single array
             $characterData = [

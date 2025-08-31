@@ -7,6 +7,8 @@ use Themis\System\DatabaseOperator;
 use Themis\System\DataContainer;
 use Themis\System\ThemisContainer;
 
+use Themis\Character\Character;
+
 use PDO;
 use PDOException;
 use Exception;
@@ -75,10 +77,47 @@ class UserLegacyImport {
                 echo PHP_EOL, PHP_EOL, "Character data: ", PHP_EOL;
                 print_r($characterData);
             }
-
+            if (empty($characterData)) {
+                return false; // No characters to import, all is well.
+            }
         } catch (PDOException $e) {
             throw new UserLegacyImportException($e->getMessage());
         }
 
+        // Stage 3: Import character data into new database.
+        $character = new Character($this->container);
+        $this->dataContainer->set('importing', true);
+        if (!$this->dataContainer->has('cmd')) {
+            $this->dataContainer->set('cmd', []);
+        }
+        $character->setImportState(true); // Uncomment to enable importing mode
+        $import = $character->importLegacyCharacters($characterData);
+        if (!$import) {
+            return false; // Nothing to import; errors would've thrown otherwise.
+        }
+        
+        // Stage 4: Set the user's last loaded legacy character as its current one.
+        $lastCharacterId = "-{$legacyData['lastchar']}"; // Prefix with a dash to indicate legacy status
+        $dbo->useConnection("default");
+        $dbo->beginTransaction();
+        try {
+            $update = $dbo->update(
+                "players",
+                ["player_current_character"],
+                [(string)$lastCharacterId],
+                ["player_uuid"],
+                [(string)$uuid]
+            );
+            if ($update === false) {
+                $dbo->rollbackTransaction();
+                throw new UserLegacyImportException("Failed to update user's current character.");
+            }
+            $dbo->commitTransaction();
+        } catch (PDOException $e) {
+            $dbo->rollbackTransaction();
+            throw new UserLegacyImportException($e->getMessage());
+        }
+
+        return true; // Success!
     }
 }

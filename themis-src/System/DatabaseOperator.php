@@ -16,6 +16,12 @@ use Exception;
  * database connection and transactions. It centralizes error handling and
  * promotes the "Don't Repeat Yourself" (DRY) principle.
  */
+/**
+ * Class DatabaseOperator
+ *
+ * Provides a robust abstraction layer for PDO database operations, including connection management,
+ * transaction handling, and CRUD operations. Centralizes error handling and enforces safe query practices.
+ */
 class DatabaseOperatorException extends Exception {}
 class DatabaseOperator {
     private ?ThemisContainer $container = null;
@@ -28,20 +34,27 @@ class DatabaseOperator {
         "users",
         "player_characters",
         "rp_tool_character_repository",
-        "player_tags"
+        "player_tags",
+        "launch_tokens",
+        "sessions"
     ];
     
+    /**
+     * DatabaseOperator constructor.
+     *
+     * @param ThemisContainer $container Dependency injection container.
+     */
     public function __construct(ThemisContainer $container) {
         $this->container = $container;
-        $dataContainer = $this->container->get('dataContainer');
+        $this->dataContainer = $this->container->get('dataContainer');
     }
 
     /**
-     * Connects to the database, using the DatabaseConnector class.
+     * Establishes a PDO connection to the specified database.
      *
-     * @param string|null $databaseName The name of the database to connect to.
-     * @param array $options Additional options for the PDO connection.
-     * @throws DatabaseOperatorException If the PDO connection fails.
+     * @param string|null $databaseName Name of the database to connect to, or null for default.
+     * @param array $options Optional PDO connection options.
+     * @throws DatabaseOperatorException If connection fails or PDO is not established.
      */
     public function connectToDatabase(?string $databaseName = null, array $options = []): void {
         if($databaseName === null) {
@@ -64,28 +77,45 @@ class DatabaseOperator {
         }
     }
 
+    /**
+     * Switches the active PDO connection to the specified connection name.
+     *
+     * @param string $connectionName Name of the connection to switch to.
+     * @throws DatabaseOperatorException If a transaction is active or connection does not exist.
+     */
     public function useConnection(string $connectionName): void {
         if ($this->pdo->inTransaction()) {
-            // STOP! Throw error!
             throw new DatabaseOperatorException("Cannot change connection while in transaction.");
         }
         $this->whichPdo = $connectionName;
         $this->pdo = $this->pdoInstances[$connectionName];
     }
 
+    /**
+     * Checks if the specified connection name is the current active connection.
+     *
+     * @param string $connectionName Connection name to check.
+     * @return bool True if current, false otherwise.
+     */
     public function isCurrentConnection(string $connectionName): bool {
         return $this->whichPdo === $connectionName;
     }
 
+    /**
+     * Determines if a PDO connection exists for the given connection name.
+     *
+     * @param string $connectionName Connection name to check.
+     * @return bool True if connection exists, false otherwise.
+     */
     public function hasConnection(string $connectionName): bool {
         return isset($this->pdoInstances[$connectionName]);
     }
 
     /**
-     * Gets the internal PDO instance.
+     * Retrieves the current active PDO instance.
      *
-     * @return PDO The PDO instance.
-     * @throws DatabaseOperatorException If the PDO instance is not established.
+     * @return PDO The active PDO instance.
+     * @throws DatabaseOperatorException If PDO is not established.
      */
     public function getPdo(): PDO {
         if (!$this->pdo) {
@@ -95,27 +125,32 @@ class DatabaseOperator {
     }
 
     /**
-     * Prepares and executes a direct SQL query input from invoking object.
+     * Executes a manual SQL query with parameters, forbidding destructive queries.
+     *
+     * @param string $query The SQL query to execute.
+     * @param array $params Parameters to bind to the query.
+     * @return array Query results as an associative array.
+     * @throws DatabaseOperatorException If query is destructive or execution fails.
      */
     public function manualQuery(string $query, array $params = []): array {
         // Forbid some destructive queries
-        if (preg_match('/^(?:DELETE|DROP|TRUNCATE|REPLACE)/i', $query)) {
+        if (preg_match(pattern: '/^(?:DELETE|DROP|TRUNCATE|REPLACE)/i', subject: $query)) {
             throw new DatabaseOperatorException("Destructive queries are not allowed.");
         }
         $pdo = $this->getPdo();
         try {
-            $statement = $pdo->prepare($query);
-            $statement->execute($params);
-            return $statement->fetchAll(PDO::FETCH_ASSOC);
+            $statement = $pdo->prepare(query: $query);
+            $statement->execute(params: $params);
+            return $statement->fetchAll(mode: PDO::FETCH_ASSOC);
         } catch (PDOException $e) {
             throw new DatabaseOperatorException("Error executing query: " . $e->getMessage());
         }
     }
 
     /**
-     * Begins a transaction.
+     * Begins a new database transaction.
      *
-     * @throws DatabaseOperatorException If already in a transaction or if the PDO connection is not established.
+     * @throws DatabaseOperatorException If already in a transaction or PDO is not established.
      */
     public function beginTransaction() : void
     {
@@ -127,9 +162,20 @@ class DatabaseOperator {
     }
 
     /**
-     * Commits the current transaction.
+     * Checks if a transaction is currently active.
      *
-     * @throws DatabaseOperatorException If not in a transaction or if the PDO connection is not established.
+     * @return bool True if in transaction, false otherwise.
+     */
+    public function inTransaction(): bool
+    {
+        $pdo = $this->getPdo();
+        return $pdo->inTransaction();
+    }
+
+    /**
+     * Commits the current database transaction.
+     *
+     * @throws DatabaseOperatorException If not in a transaction or PDO is not established.
      */
     public function commitTransaction() : void
     {
@@ -141,9 +187,9 @@ class DatabaseOperator {
     }
 
     /**
-     * Rolls back the current transaction.
+     * Rolls back the current database transaction.
      *
-     * @throws DatabaseOperatorException If not in a transaction or if the PDO connection is not established.
+     * @throws DatabaseOperatorException If not in a transaction or PDO is not established.
      */
     public function rollbackTransaction() : void
     {
@@ -154,22 +200,27 @@ class DatabaseOperator {
         $pdo->rollBack();
     }
 
+    /**
+     * Safely quotes a SQL identifier (e.g., table or column name).
+     *
+     * @param string $identifier Identifier to quote.
+     * @return string Quoted identifier.
+     */
     private function quoteIdentifier(string $identifier): string
     {
-        // A simple check to ensure we don't double-quote
         return "`" . str_replace("`", "``", $identifier) . "`";
     }
 
 
     /**
-     * Selects data from a table.
+     * Selects data from a table with specified columns and conditions.
      *
-     * @param array $select The columns to select.
-     * @param int $from The table to select from, represented as an integer id from the TABLES constant.
-     * @param array $where The columns to filter by.
-     * @param array $equals The values to filter by.
-     * @return array The selected data.
-     * @throws DatabaseOperatorException If the table is invalid or if the where and equals count mismatch.
+     * @param array $select Columns to select (e.g., ['*'] or specific column names).
+     * @param string $from Table name to select from.
+     * @param array $where Columns to filter by.
+     * @param array $equals Values to filter by (must match $where count).
+     * @return array Selected data as associative array.
+     * @throws DatabaseOperatorException If table is invalid or where/equals count mismatch.
      */
     public function select(array $select, string $from, array $where, array $equals): array {
         if (!in_array($from, self::TABLES)) {
@@ -178,7 +229,7 @@ class DatabaseOperator {
 
         $pdo = $this->getPdo();
 
-        $table = $this->quoteIdentifier($from);
+        $table = $this->quoteIdentifier((string)$from);
         if (count($where) !== count($equals)) {
             throw new DatabaseOperatorException("Mismatched where and equals count.");
         }
@@ -205,6 +256,14 @@ class DatabaseOperator {
         }
     }
 
+    /**
+     * Inserts a new row into the specified table.
+     *
+     * @param string $into Table name to insert into.
+     * @param array $columns Column names for the insert.
+     * @param array $values Values to insert (must match columns count).
+     * @throws DatabaseOperatorException If columns/values count mismatch, table is invalid, or query fails.
+     */
     public function insert(string $into, array $columns, array $values): void {
         if (count($columns) !== count($values)) {
             throw new DatabaseOperatorException("Mismatched columns and values count.");
@@ -230,7 +289,17 @@ class DatabaseOperator {
         }
     }
 
-    public function update(string $table, array $columns, array $values, array $where, array $equals): void {
+    /**
+     * Updates rows in the specified table with given columns and values, filtered by conditions.
+     *
+     * @param string $table Table name to update.
+     * @param array $columns Columns to update.
+     * @param array $values New values for the columns.
+     * @param array $where Columns to filter by.
+     * @param array $equals Values to filter by (must match $where count).
+     * @throws DatabaseOperatorException If columns/values count mismatch, table is invalid, or query fails.
+     */
+    public function update(string $table, array $columns, array $values, array $where, array $equals, array $notWhere = [], array $notEquals = []): void {
         if (count($columns) !== count($values)) {
             throw new DatabaseOperatorException("Mismatched columns and values count.");
         }
@@ -244,14 +313,32 @@ class DatabaseOperator {
         $quotedColumns = array_map(fn($column) => $this->quoteIdentifier($column) . " = ?", $columns);
         $columnString = implode(", ", $quotedColumns);
 
+        if (count($where) !== count($equals)) {
+            throw new DatabaseOperatorException("Mismatched where and equals count.");
+        }
+
         $quotedWhere = array_map(fn($column) => $this->quoteIdentifier($column) . " = ?", $where);
         $whereString = implode(" AND ", $quotedWhere);
 
-        $stmt = "UPDATE {$table} SET {$columnString} WHERE {$whereString}";
+        // Handle optional negative WHEREs (AND NOT (...))
+        $negativeClause = '';
+        if (!empty($notWhere) || !empty($notEquals)) {
+            if (count($notWhere) !== count($notEquals)) {
+                throw new DatabaseOperatorException("Mismatched notWhere and notEquals count.");
+            }
+            if (!empty($notWhere)) {
+                $quotedNegative = array_map(fn($column) => $this->quoteIdentifier($column) . " = ?", $notWhere);
+                $negativeClause = ' AND NOT (' . implode(' AND ', $quotedNegative) . ')';
+            }
+        }
+
+        $stmt = "UPDATE {$table} SET {$columnString} WHERE {$whereString}" . $negativeClause;
 
         try {
             $query = $pdo->prepare($stmt);
-            $query->execute(array_merge($values, $equals));
+            // Bind parameters in order: values (SET), equals (WHERE), notEquals (AND NOT)
+            $params = array_merge($values, $equals, $notEquals);
+            $query->execute($params);
         } catch (PDOException $e) {
             throw new DatabaseOperatorException("Error executing query: " . $e->getMessage(), 0, $e);
         }

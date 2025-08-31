@@ -1,0 +1,73 @@
+# Patch: Init.php - add simple HMAC token verifier (non-expiring, one-shot)
+# Purpose: store a ready-to-apply patch and implementation notes for later use.
+# File: /var/www/html/themis/Init.php
+# Summary: Adds a small, optional verifier in validateUser() that checks
+# the HTTP header X-THEMIS-TOKEN (HTTP_X_THEMIS_TOKEN) as a base64url-encoded
+# raw HMAC-SHA256 over the user's UUID. No timestamp is used (per spec).
+
+*** Proposed code snippet (PHP) ***
+
+// Helper: base64url decode
+private function base64url_decode(string $data): string|false {
+    $b64 = strtr($data, '-_', '+/');
+    $pad = strlen($b64) % 4;
+    if ($pad) {
+        $b64 .= str_repeat('=', 4 - $pad);
+    }
+    return base64_decode($b64, true);
+}
+
+// Insert in Init::validateUser() at the point where you already have
+// $slHeaders or the UUID available (before trusting the request):
+
+// Example placement (conceptual):
+$tokenHeader = $slHeaders['HTTP_X_THEMIS_TOKEN'] ?? ($_SERVER['HTTP_X_THEMIS_TOKEN'] ?? null);
+if ($tokenHeader !== null) {
+    $raw = $this->base64url_decode($tokenHeader);
+    if ($raw === false) {
+        throw new Exception('Malformed authentication token.');
+    }
+
+    $secret = getenv('THEMIS_SECRET') ?: '';
+    if ($secret === '') {
+        throw new Exception('Server secret not configured.');
+    }
+
+    // Decide canonical UUID source - e.g., use the SL owner key header
+    $uuid = $slHeaders['HTTP_X_SECONDLIFE_OWNER_KEY'] ?? ($_POST['uuid'] ?? ($_GET['uuid'] ?? null));
+    if (!$uuid) {
+        throw new Exception('Missing UUID for token verification.');
+    }
+
+    // Compute expected raw binary HMAC
+    $expected = hash_hmac('sha256', $uuid, $secret, true);
+    if (!hash_equals($expected, $raw)) {
+        throw new Exception('Token verification failed.');
+    }
+    // Token valid — continue
+}
+
+*** Notes / rationale ***
+- Uses raw binary HMAC-SHA256 (hash_hmac(..., true)) and base64url transport to fit headers.
+- No timestamp or nonce: replay attacks are possible if HTTPS/TLS is broken, but per your requirement
+  the request lifecycle is single-shot and you accept this tradeoff.
+- Use HTTPS only and never log raw token bytes or full header values. If logging is required, mask them.
+- The verifier is optional: if no token header is present the code should fall back to existing debug/validation path
+  (or reject outright, depending on policy). The snippet above only runs if a header is present.
+
+*** Test instructions (manual) ***
+1. Locally generate a token using PHP CLI (replace SECRET and UUID):
+   php -r "$s='secret'; $u='uuid-string'; $h=hash_hmac('sha256',$u,$s,true); echo rtrim(strtr(base64_encode($h), '+/', '-_'), '=');"
+2. Send a request to your endpoint with header X-Themis-Token: <value>
+3. Verify the Init::validateUser() code accepts the request when token matches, rejects otherwise.
+
+*** Where to insert this in the repo ***
+- Add the helper method to the Init class (private function base64url_decode).
+- Insert the verification block into Init::validateUser() at the start (after $slHeaders is set) or where appropriate.
+
+*** Caveats / future improvements ***
+- Add optional timestamp/nonce to prevent replay without major client/server change.
+- Support token rotation: accept multiple server-side secrets while rotating.
+- Consider extracting token validation into a small, testable class/service bound into the container.
+
+# End of patch file

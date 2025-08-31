@@ -5,23 +5,34 @@ namespace Themis\System;
 use Exception;
 
 /**
- * Minimal DI Container for Themis
+ * Class ThemisContainer
+ *
+ * Minimal dependency injection (DI) container for Themis.
+ * Supports binding resolvers, resolving instances, circular dependency detection,
+ * and management of bindings and instances. Future: consider auto-wiring.
  */
- // Note: Investigate adding auto-wiring capabilities in the future.
 
 final class ThemisContainer {
-    /** @var array<string, callable> */
+    /**
+     * @var array<string, callable> Bindings of names to resolver callables.
+     */
     private array $bindings = [];
-    /** @var array<string, mixed> */
+    /**
+     * @var array<string, mixed> Instantiated objects by name.
+     */
     private array $instances = [];
-    /** @var array<string> */
+    /**
+     * @var array<string> Names currently being resolved (for circular dependency detection).
+     */
     private array $resolving = [];
 
     /**
-     * Bind a resolver to a name.
+     * Binds a resolver callable to a name in the container.
      *
-     * @param string $name
-     * @param callable $resolver
+     * Unbinds previous instance if type is identical.
+     *
+     * @param string $name Name to bind.
+     * @param callable $resolver Resolver function accepting the container.
      * @return void
      */
     final public function set(string $name, callable $resolver) {
@@ -33,11 +44,14 @@ final class ThemisContainer {
     }
 
     /**
-     * Resolve an instance by name.
+     * Resolves and returns an instance by name.
      *
-     * @param string $name
-     * @return mixed
-     * @throws ContainerException
+     * If already instantiated, returns the instance. Otherwise, calls the resolver.
+     * Detects and prevents circular dependencies.
+     *
+     * @param string $name Name to resolve.
+     * @return mixed      The resolved instance.
+     * @throws Exception  If no binding exists or circular dependency detected.
      */
     final public function get(string $name) {
         if (isset($this->instances[$name])) {
@@ -58,17 +72,17 @@ final class ThemisContainer {
     }
 
     /**
-     * Check if a name is bound in the container.
+     * Checks if a name is bound or instantiated in the container.
      *
-     * @param string $name
-     * @return bool
+     * @param string $name Name to check.
+     * @return bool       True if bound or instantiated, false otherwise.
      */
     final public function has(string $name): bool {
         return isset($this->bindings[$name]) || isset($this->instances[$name]);
     }
 
     /**
-     * Clear all bindings and instances.
+     * Clears all bindings, instances, and resolving state from the container.
      *
      * @return void
      */
@@ -79,9 +93,9 @@ final class ThemisContainer {
     }
 
     /**
-     * Unbind a name from the container.
+     * Unbinds a name from the container and removes its instance.
      *
-     * @param string $name
+     * @param string $name Name to unbind.
      * @return void
      */
     final public function unbind(string $name): void {
@@ -90,4 +104,7 @@ final class ThemisContainer {
     }
 }
 
+/**
+ * Exception thrown for DI container errors.
+ */
 class ContainerException extends Exception {}

@@ -7,8 +7,7 @@ use Themis\System\DataContainer;
 use Themis\System\DatabaseOperator;
 use Themis\System\DatabaseOperatorException;
 use Exception;
-
-class UserValidationException extends Exception {}
+use Themis\Utils\Exceptions\UserValidationException;
 class UserValidation {
     private ThemisContainer $container;
     private DataContainer $dataContainer;
@@ -129,6 +128,7 @@ class UserValidation {
         
         if ($this->debug) {
             echo "User registered successfully: " . print_r($newUser, true) . "\n";
+            $this->dataContainer->set('userData', $newUser[0]);
         }
         return true;
     }
