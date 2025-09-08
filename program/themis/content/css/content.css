@@ -1,0 +1,97 @@
+/* Foundational CSS for content fragments loaded into the HUD content area
+   Class: .contentcss
+   - Transparent background so it layers over the HUD content area
+   - Default text color: black (can be overridden)
+   - Inputs use a slightly darkened version of the HUD light background
+   - Buttons styled like the HUD arrow buttons
+*/
+
+.contentcss {
+  background: transparent;
+  color: #000; /* default text color - black */
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+  box-sizing: border-box;
+}
+
+/* Make content fragment fill available area (but keep layout under parent control) */
+.contentcss .content-root {
+  width: 100%;
+  height: auto;
+}
+
+/* Inputs: slightly darkened version of the HUD light background.
+   Using a neutral CSS variable fallback: hud light appears to be a pale tan in the HUD CSS,
+   approximate with rgba(214,207,174,1) darkened slightly for input backgrounds.
+*/
+.contentcss input[type="text"],
+.contentcss input[type="email"],
+.contentcss input[type="password"],
+.contentcss textarea,
+.contentcss select {
+  background: rgba(186,176,145,0.95); /* slightly darker than HUD light */
+  color: #000;
+  border: 1px solid rgba(0,0,0,0.08);
+  padding: 6px 8px;
+  border-radius: 6px;
+  outline: none;
+  box-shadow: none;
+}
+
+.contentcss input:focus,
+.contentcss textarea:focus,
+.contentcss select:focus {
+  box-shadow: 0 0 0 3px rgba(0,0,0,0.04) inset;
+  border-color: rgba(0,0,0,0.18);
+}
+
+/* Buttons: mimic the HUD arrow buttons style used in hud_interface.css (rounded, subtle border)
+   We'll implement a reusable button class for content pages too.
+*/
+.contentcss .btn,
+.contentcss button {
+  background: linear-gradient(180deg, #f6f3e8, #e3dbc2); /* soft light gradient similar to HUD */
+  border: 1px solid rgba(0,0,0,0.12);
+  color: #1a1a1a;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.6) inset;
+  transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+  font-weight: 600;
+}
+
+.contentcss .btn:active,
+.contentcss button:active {
+  transform: translateY(1px) scale(0.995);
+  box-shadow: 0 1px 0 rgba(0,0,0,0.04) inset;
+}
+
+.contentcss .btn.disabled,
+.contentcss button.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* Small arrow-style button for consistency with menu arrows */
+.contentcss .arrow {
+  width: 36px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 16px;
+  border-radius: 6px;
+}
+
+/* Utility spacing */
+.contentcss .row { display:flex; gap:8px; align-items:center; }
+.contentcss .col { display:flex; flex-direction:column; gap:8px; }
+
+/* Small responsive tweaks when embedded in narrow HUD area */
+@media (max-width: 420px) {
+  .contentcss { font-size: 13px; }
+  .contentcss .btn { padding: 6px 10px; border-radius:6px; }
+}
