@@ -2,12 +2,13 @@
 declare(strict_types=1);
 namespace Themis;
 
-require_once __DIR__ . '/Autoloader.php';
+require_once __DIR__ . '/Autoloader.php'; // Also includes error handler.
 
 
 use Themis\System\ThemisContainer;
 use Themis\System\DatabaseOperator;
 use Themis\System\DataContainer;
+use Themis\User\UserValidation;
 
 use Exception;
 use Throwable;
@@ -27,7 +28,8 @@ class HudGate {
     private DataContainer $dataContainer;
 
     private const SYSTEM_CLASSES = [
-        'dbOperator' => DatabaseOperator::class
+        'dbOperator' => DatabaseOperator::class,
+        'userValidation' => UserValidation::class,
     ];
 
     public function __construct(ThemisContainer $container) {
@@ -42,6 +44,10 @@ class HudGate {
             });
         }
         $this->dataContainer->set('debug', $this->debug);
+    }
+
+    public function registerOrValidateUser(): void {
+        // User registration or validation logic goes here
     }
 
     public function init(): void {
@@ -96,35 +102,41 @@ class HudGate {
         $dbOperator = $this->container->get('dbOperator');
         $dbOperator->connectToDatabase();
 
-        $dbOperator->beginTransaction();
+    // Intentionally begin a transaction and hold the row lock acquired by the
+    // SELECT ... FOR UPDATE below until commit. We'll only have a maximum of 100
+    // concurrent users, so it should be impossible to create a scenario where any
+    // one of them is waiting for a lock to be released.
+    // Hoard that shit like a greedy dragon!
+    $dbOperator->beginTransaction();
         try {
             $findToken = $dbOperator->select(
-            select: ['*'],
-            from: 'launch_tokens',
-            where: ['token', 'used'],
-            equals: [$token, 0]
+                select: ['*'],
+                from: 'launch_tokens',
+                where: ['token', 'used'],
+                equals: [$token, 0],
+                for: 'UPDATE'
             );
 
             if (!$findToken || count($findToken) === 0) {
-            throw new HudGateException('Invalid or already used token.');
+                throw new HudGateException('Invalid or already used token.');
             }
             $findToken = $findToken[0];
             $sessionId = $findToken['session_id'];
 
             // Mark launch token as used.
             $dbOperator->update(
-            table: 'launch_tokens',
-            columns: ['used'],
-            values: [1],
-            where: ['token'],
-            equals: [$findToken['token']]
+                table: 'launch_tokens',
+                columns: ['used'],
+                values: [($this->debug ? 0 : 1)],
+                where: ['token', 'used'],
+                equals: [$findToken['token'], 0]
             );
 
             $session = $dbOperator->select(
-            select: ['*'],
-            from: 'sessions',
-            where: ['session_id', 'revoked'],
-            equals: [$sessionId, 0]
+                select: ['*'],
+                from: 'sessions',
+                where: ['session_id', 'revoked'],
+                equals: [$sessionId, 0]
             );
 
             if (!$session || count($session) === 0) {
@@ -135,27 +147,27 @@ class HudGate {
             $uuid = $session['uuid'];
 
             $dbOperator->update(
-            table: 'sessions',
-            columns: ['expires'],
-            values: [date('Y-m-d H:i:s', strtotime('+1 hour'))],
-            where: ['id'],
-            equals: [$session['id']]
+                table: 'sessions',
+                columns: ['expires'],
+                values: [date('Y-m-d H:i:s', strtotime('+24 hours'))],
+                where: ['id'],
+                equals: [$session['id']]
             );
             $dbOperator->update(
-            table: 'sessions',
-            columns: ['revoked'],
-            values: [1],
-            where: ['uuid'],
-            equals: [$uuid],
-            notWhere: ['id'],
-            notEquals: [$session['id']]
+                table: 'sessions',
+                columns: ['revoked'],
+                values: [1],
+                where: ['uuid'],
+                equals: [$uuid],
+                notWhere: ['id'],
+                notEquals: [$session['id']]
             );
 
             $playerInformation = $dbOperator->select(
-            select: ['*'],
-            from: 'players',
-            where: ['player_uuid'],
-            equals: [$uuid]
+                select: ['*'],
+                from: 'players',
+                where: ['player_uuid'],
+                equals: [$uuid]
             );
             $dbOperator->commitTransaction();
         } catch (Throwable $e) {
