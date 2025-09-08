@@ -1,8 +1,9 @@
 <?php
 declare(strict_types=1);
 namespace Themis\System;
+
+use Themis\Utils\JsonUtils;
 use Exception;
-use Themis\Init;
 use JsonException;
 
 
@@ -110,6 +111,12 @@ final class DataContainer {
             }
 
             $contents = file_get_contents(filename: $filePath);
+            if ($contents === false) {
+                throw new Exception("Failed to read file: {$filePath}");
+            }
+            if (!JsonUtils::isValidJson($contents)) {
+                throw new JsonException("Invalid JSON in file: {$filePath}");
+            }
             $fileNameKey = basename(path: $filePath); // full file name with extension
             $key = $fileNameKey;
             if ($suffix !== null) {
