@@ -11,21 +11,19 @@ use Exception;
 
 /**
  * PDO Abstraction Layer
- * 
- * This class provides a standardized and robust interface for managing a PDO
- * database connection and transactions. It centralizes error handling and
- * promotes the "Don't Repeat Yourself" (DRY) principle.
- */
-/**
- * Class DatabaseOperator
  *
- * Provides a robust abstraction layer for PDO database operations, including connection management,
- * transaction handling, and CRUD operations. Centralizes error handling and enforces safe query practices.
+ * Provides a standardized and robust interface for managing one or more PDO
+ * database connections, transactions, and common CRUD operations. Centralizes
+ * error handling and enforces safe query practices for the application.
+ *
+ * Note: this class intentionally performs strict validation on identifiers and
+ * user-supplied SQL fragments (for example the select list and ORDER BY)
+ * to reduce risk of SQL injection and accidental destructive queries.
+ *
+ * @package Themis\System
  */
 class DatabaseOperatorException extends Exception {}
 class DatabaseOperator {
-    private ?ThemisContainer $container = null;
-    private DataContainer $dataContainer;
     private array $pdoInstances = [];
     private ?string $whichPdo = null;
     private ?PDO $pdo = null;
@@ -38,15 +36,22 @@ class DatabaseOperator {
         "launch_tokens",
         "sessions"
     ];
-    
+
     /**
      * DatabaseOperator constructor.
      *
-     * @param ThemisContainer $container Dependency injection container.
+     * Accepts variable arguments for backward compatibility with dependency-injection containers
+     * and intentionally ignores them. This constructor does not establish any connections.
+     *
+     * @param mixed ...$_args Optional, ignored. Present for DI compatibility.
      */
-    public function __construct(ThemisContainer $container) {
-        $this->container = $container;
-        $this->dataContainer = $this->container->get('dataContainer');
+    public function __construct(...$_args) {
+        // Guard against errors caused by DI injection since it's nice to have
+        // this go through the injector for the sake of pattern, but we need
+        // neither the ThemisContainer nor DataContainer in here.
+        // So, empty $_args, and if we ever need to get back to add more stuff,
+        // worry about it then.
+        unset($_args);
     }
 
     /**
@@ -81,7 +86,7 @@ class DatabaseOperator {
      * Switches the active PDO connection to the specified connection name.
      *
      * @param string $connectionName Name of the connection to switch to.
-     * @throws DatabaseOperatorException If a transaction is active or connection does not exist.
+     * @throws DatabaseOperatorException If a transaction is active or the connection does not exist.
      */
     public function useConnection(string $connectionName): void {
         if ($this->pdo->inTransaction()) {
@@ -127,12 +132,17 @@ class DatabaseOperator {
     /**
      * Executes a manual SQL query with parameters, forbidding destructive queries.
      *
-     * @param string $query The SQL query to execute.
-     * @param array $params Parameters to bind to the query.
-     * @return array Query results as an associative array.
-     * @throws DatabaseOperatorException If query is destructive or execution fails.
+     * For SELECT-like statements this returns an array of associative rows. For
+     * non-SELECT statements (UPDATE/INSERT/etc) it returns the number of affected rows.
+     *
+    * @param string $query The SQL query to execute. Destructive queries (DELETE, DROP, TRUNCATE, REPLACE)
+    *                     are deliberately rejected by this method.
+    * @param array<int,mixed> $params Positional parameters to bind to the prepared statement.
+    * @return array<int,array<string,mixed>>|int Returns rows (assoc arrays) for SELECTs, or the number of affected
+    *                                          rows for non-SELECT statements.
+    * @throws DatabaseOperatorException If a destructive query is attempted or the statement fails to prepare/execute.
      */
-    public function manualQuery(string $query, array $params = []): array {
+    public function manualQuery(string $query, array $params = []): array|int {
         // Forbid some destructive queries
         if (preg_match(pattern: '/^(?:DELETE|DROP|TRUNCATE|REPLACE)/i', subject: $query)) {
             throw new DatabaseOperatorException("Destructive queries are not allowed.");
@@ -140,8 +150,17 @@ class DatabaseOperator {
         $pdo = $this->getPdo();
         try {
             $statement = $pdo->prepare(query: $query);
-            $statement->execute(params: $params);
-            return $statement->fetchAll(mode: PDO::FETCH_ASSOC);
+            $ok = $statement->execute(params: $params);
+            if ($ok === false) {
+                $err = $statement->errorInfo();
+                throw new DatabaseOperatorException("Error executing query: " . ($err[2] ?? 'unknown'));
+            }
+            if ($statement->columnCount() > 0) {
+                // A result set is available (SELECT). Return rows as assoc array.
+                return $statement->fetchAll(mode: PDO::FETCH_ASSOC);
+            }
+            // No result set: return number of affected rows (could be 0).
+            return $statement->rowCount();
         } catch (PDOException $e) {
             throw new DatabaseOperatorException("Error executing query: " . $e->getMessage());
         }
@@ -150,7 +169,7 @@ class DatabaseOperator {
     /**
      * Begins a new database transaction.
      *
-     * @throws DatabaseOperatorException If already in a transaction or PDO is not established.
+    * @throws DatabaseOperatorException If already in a transaction or no PDO connection is established.
      */
     public function beginTransaction() : void
     {
@@ -164,7 +183,7 @@ class DatabaseOperator {
     /**
      * Checks if a transaction is currently active.
      *
-     * @return bool True if in transaction, false otherwise.
+    * @return bool True if in transaction, false otherwise.
      */
     public function inTransaction(): bool
     {
@@ -175,7 +194,7 @@ class DatabaseOperator {
     /**
      * Commits the current database transaction.
      *
-     * @throws DatabaseOperatorException If not in a transaction or PDO is not established.
+    * @throws DatabaseOperatorException If not in a transaction or no PDO connection is established.
      */
     public function commitTransaction() : void
     {
@@ -189,7 +208,7 @@ class DatabaseOperator {
     /**
      * Rolls back the current database transaction.
      *
-     * @throws DatabaseOperatorException If not in a transaction or PDO is not established.
+    * @throws DatabaseOperatorException If not in a transaction or no PDO connection is established.
      */
     public function rollbackTransaction() : void
     {
@@ -203,8 +222,11 @@ class DatabaseOperator {
     /**
      * Safely quotes a SQL identifier (e.g., table or column name).
      *
-     * @param string $identifier Identifier to quote.
-     * @return string Quoted identifier.
+    * This function only quotes identifiers; it does not validate table whitelists.
+    * Use the public APIs in this class to enforce table restrictions.
+    *
+    * @param string $identifier Identifier to quote (single identifier or dotted identifier parts).
+    * @return string Quoted identifier suitable for inclusion in SQL statements.
      */
     private function quoteIdentifier(string $identifier): string
     {
@@ -215,14 +237,58 @@ class DatabaseOperator {
     /**
      * Selects data from a table with specified columns and conditions.
      *
-     * @param array $select Columns to select (e.g., ['*'] or specific column names).
-     * @param string $from Table name to select from.
-     * @param array $where Columns to filter by.
-     * @param array $equals Values to filter by (must match $where count).
-     * @return array Selected data as associative array.
-     * @throws DatabaseOperatorException If table is invalid or where/equals count mismatch.
+     * - The `$select` array is strictly validated: '*' is allowed only alone, and
+     *   every other identifier must match the pattern [A-Za-z_][A-Za-z0-9_]* with
+     *   optional dotted parts (table.column).
+     * - `$where` and `$equals` are positional arrays; their counts must match when
+     *   provided. A null in `$equals` produces an IS NULL check. An array in
+     *   `$equals` produces an IN (...) clause.
+     * - ORDER BY is enabled via `$ordered` and `$orderedBy`. `$orderedBy` may be a
+     *   comma-separated list of identifiers and will be quoted for safety.
+     * - `$for` accepts a small whitelist of lock clauses (FOR UPDATE, FOR SHARE, etc.).
+     *
+     * @param array<int,string> $select List of columns to select (or ['*']).
+     * @param string $from Table name to select from (must be present in the internal whitelist).
+     * @param array<int,string> $where Columns to filter by (positional; may be empty for no WHERE).
+     * @param array<int,mixed> $equals Values to filter by (positional; may include null or arrays for IN).
+     * @param bool $ordered Whether to append an ORDER BY clause.
+     * @param string|null $orderedBy Comma-separated list of columns for ordering when $ordered is true.
+     * @param bool $ascending If true ORDER BY uses ASC, otherwise DESC.
+     * @param string|null $for Optional lock clause ("FOR UPDATE", "SHARE", etc.).
+     * @return array<int,array<string,mixed>> Selected rows as associative arrays.
+     * @throws DatabaseOperatorException If identifiers are invalid, counts mismatch, table not allowed, or the FOR clause is invalid.
      */
-    public function select(array $select, string $from, array $where, array $equals): array {
+    public function select(array $select, string $from, array $where = [], array $equals = [], bool $ordered = false, ?string $orderedBy = null, bool $ascending = false, ?string $for = null): array {
+        // Normalize and validate $select:
+        // - coerce to strings and trim
+        // - remove empty entries
+        // - '*' is allowed only as the sole element
+        // - identifiers must start with letter or underscore, may include digits/underscores, and may be dotted (table.column)
+        $raw = array_values($select);
+        $select = [];
+        foreach ($raw as $col) {
+            $c = trim((string)$col);
+            if ($c === '') {
+                continue;
+            }
+            $select[] = $c;
+        }
+        if (empty($select)) {
+            throw new DatabaseOperatorException("Select array cannot be empty.");
+        }
+        if (count($select) === 1 && $select[0] === '*') {
+            // okay: select all
+        } else {
+            foreach ($select as $c) {
+                if ($c === '*') {
+                    throw new DatabaseOperatorException("'*' may only be used alone in select list.");
+                }
+                // identifiers: letter or underscore start, then letters/digits/underscore; allow dot-separated parts
+                if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/', $c)) {
+                    throw new DatabaseOperatorException("Invalid select column: {$c}");
+                }
+            }
+        }
         if (!in_array($from, self::TABLES)) {
             throw new DatabaseOperatorException("Invalid table.");
         }
@@ -230,7 +296,9 @@ class DatabaseOperator {
         $pdo = $this->getPdo();
 
         $table = $this->quoteIdentifier((string)$from);
-        if (count($where) !== count($equals)) {
+
+        // Allow empty WHERE/equals for "select all". Otherwise counts must match.
+        if ((count($where) !== 0 || count($equals) !== 0) && count($where) !== count($equals)) {
             throw new DatabaseOperatorException("Mismatched where and equals count.");
         }
 
@@ -242,14 +310,83 @@ class DatabaseOperator {
             $selectString = implode(", ", $quotedColumns);
         }
 
-        $quotedWhere = array_map(fn($column) => $this->quoteIdentifier($column) . " = ?", $where);
-        $whereString = implode(" AND ", $quotedWhere);
+        $params = [];
+        $whereString = '';
+        if (!empty($where)) {
+            $clauses = [];
+            foreach ($where as $i => $column) {
+                $quotedCol = $this->quoteIdentifier($column);
+                $value = $equals[$i] ?? null;
 
-        $stmt = "SELECT {$selectString} FROM {$table} WHERE {$whereString}";
+                // Support IN (...) when caller provides an array of values
+                if (is_array($value)) {
+                    if (count($value) === 0) {
+                        // Empty IN() is always false, produce a safe clause that never matches.
+                        $clauses[] = '0 = 1';
+                        continue;
+                    }
+                    $placeholders = implode(', ', array_fill(0, count($value), '?'));
+                    $clauses[] = "{$quotedCol} IN ({$placeholders})";
+                    foreach ($value as $v) {
+                        $params[] = $v;
+                    }
+                    continue;
+                }
+
+                // Support explicit NULL checks when value is null
+                if ($value === null) {
+                    $clauses[] = "{$quotedCol} IS NULL";
+                    continue;
+                }
+
+                // Default: equality
+                $clauses[] = "{$quotedCol} = ?";
+                $params[] = $value;
+            }
+            $whereString = ' WHERE ' . implode(' AND ', $clauses);
+        }
+
+        $stmt = "SELECT {$selectString} FROM {$table}" . $whereString;
+
+        // Optional ORDER BY support (use $ordered flag and $orderedBy column(s)).
+        if ($ordered) {
+            if ($orderedBy === null || trim($orderedBy) === '') {
+                throw new DatabaseOperatorException("ORDER BY requested but no column provided.");
+            }
+            // Allow comma-separated list in $orderedBy, quote each identifier safely.
+            $cols = array_map('trim', explode(',', $orderedBy));
+            $quoted = array_map(fn($c) => $this->quoteIdentifier($c), $cols);
+            $dir = $ascending ? 'ASC' : 'DESC';
+            $orderParts = [];
+            foreach ($quoted as $c) {
+                $orderParts[] = $c . ' ' . $dir;
+            }
+            $stmt .= ' ORDER BY ' . implode(', ', $orderParts);
+        }
+
+        // Optional FOR clause (must be one of a small whitelist). Append at the end.
+        $forClause = '';
+        if ($for !== null) {
+            $normalized = strtoupper(trim($for));
+            // Accept a few short synonyms for convenience.
+            $map = [
+                'FOR UPDATE' => 'FOR UPDATE',
+                'UPDATE' => 'FOR UPDATE',
+                'FOR SHARE' => 'FOR SHARE',
+                'SHARE' => 'FOR SHARE',
+                'LOCK IN SHARE MODE' => 'LOCK IN SHARE MODE',
+                'LOCK' => 'LOCK IN SHARE MODE',
+            ];
+            if (!isset($map[$normalized])) {
+                throw new DatabaseOperatorException("Invalid FOR clause requested: {$for}");
+            }
+            $forClause = ' ' . $map[$normalized];
+            $stmt = $stmt . $forClause;
+        }
 
         try {
             $query = $pdo->prepare($stmt);
-            $query->execute($equals);
+            $query->execute($params);
             return $query->fetchAll(PDO::FETCH_ASSOC);
         } catch (PDOException $e) {
             throw new DatabaseOperatorException("Error executing query: " . $e->getMessage());
@@ -259,12 +396,14 @@ class DatabaseOperator {
     /**
      * Inserts a new row into the specified table.
      *
-     * @param string $into Table name to insert into.
-     * @param array $columns Column names for the insert.
-     * @param array $values Values to insert (must match columns count).
-     * @throws DatabaseOperatorException If columns/values count mismatch, table is invalid, or query fails.
+     * @param string $into Table name to insert into (must be present in the internal whitelist).
+     * @param array<int,string> $columns Column names for the insert.
+     * @param array<int,mixed> $values Values to insert (must match columns count).
+     * @return int|bool Returns the last insert ID as an int when available, or true on success
+     *                  when the driver does not provide an insert ID.
+     * @throws DatabaseOperatorException If columns/values count mismatch, table is invalid, or the query fails.
      */
-    public function insert(string $into, array $columns, array $values): void {
+    public function insert(string $into, array $columns, array $values): bool|int {
         if (count($columns) !== count($values)) {
             throw new DatabaseOperatorException("Mismatched columns and values count.");
         }
@@ -284,20 +423,29 @@ class DatabaseOperator {
         try {
             $query = $pdo->prepare($stmt);
             $query->execute($values);
+            $lastInsertId = $pdo->lastInsertId();
+            return $lastInsertId !== false ? (int)$lastInsertId : true;
         } catch (PDOException $e) {
             throw new DatabaseOperatorException("Error executing query: " . $e->getMessage(), 0, $e);
         }
+        return false; // Should never reach here.
     }
 
     /**
      * Updates rows in the specified table with given columns and values, filtered by conditions.
      *
-     * @param string $table Table name to update.
-     * @param array $columns Columns to update.
-     * @param array $values New values for the columns.
-     * @param array $where Columns to filter by.
-     * @param array $equals Values to filter by (must match $where count).
-     * @throws DatabaseOperatorException If columns/values count mismatch, table is invalid, or query fails.
+     * The method binds parameters in the order: SET values, WHERE equals, NOT equals.
+     * Negative conditions are optional and will be wrapped in an AND NOT (... ) clause.
+     *
+     * @param string $table Table name to update (must be present in the internal whitelist).
+     * @param array<int,string> $columns Columns to update.
+     * @param array<int,mixed> $values New values for the columns.
+     * @param array<int,string> $where Columns to filter by (positional; counts must match $equals).
+     * @param array<int,mixed> $equals Values to filter by (positional; counts must match $where).
+     * @param array<int,string> $notWhere Optional negative WHERE columns used in an AND NOT (...) clause.
+     * @param array<int,mixed> $notEquals Optional negative WHERE values used in an AND NOT (...) clause (counts must match $notWhere).
+     * @return void
+     * @throws DatabaseOperatorException If counts mismatch, table is not allowed, or the query fails.
      */
     public function update(string $table, array $columns, array $values, array $where, array $equals, array $notWhere = [], array $notEquals = []): void {
         if (count($columns) !== count($values)) {
