@@ -1,0 +1,207 @@
+/* HUD character menu styles — fully namespaced to avoid colliding with the global HUD */
+.themis-character-hud{
+    /* Sandstone palette (namespaced) */
+    --cm-hud-bg: #f0e6d200; /* light sandstone */
+    --cm-panel-bg: #e1cfa800; /* warm mid tone */
+    --cm-accent: #b5763a; /* darker accent for headings */
+    --cm-muted: #6b5842; /* muted text */
+    --cm-item-bg: #d9c7a359; /* menu item face */
+    --cm-item-hover: #cdb58b00; /* hover tone */
+    --cm-content-bg: #efe6d861; /* content background */
+    /* Font controls for menu items (override these vars to customize) */
+    --cm-item-font-family: 'Segoe UI', Roboto, Arial, Helvetica, sans-serif;
+    --cm-item-font-size: 16px;
+    --cm-item-font-style: normal;
+    /* Separate defaults for unselected vs active menu text so you can tweak either */
+    --cm-item-font-weight-unselected: 500;
+    --cm-item-font-weight-active: 600;
+    --cm-item-font-color-unselected: color-mix(in srgb, var(--cm-muted) 72%, #292016 28%);
+    --cm-item-font-color-active: color-mix(in srgb, var(--cm-muted) 40%, #cdb58b 60%);
+    font-family: 'Segoe UI', Roboto, Arial, Helvetica, sans-serif;
+    box-sizing: border-box;
+    max-width: 100%;
+    display: block;
+}
+
+.themis-character-panel{
+    display:flex;
+    gap:12px;
+    /* remove outer shadow and border for a flat carved look; use subtle inner shading */
+    background: linear-gradient(180deg, var(--cm-panel-bg), color-mix(in srgb, var(--cm-panel-bg) 80%, var(--cm-hud-bg)) );
+    padding:12px;
+    border-radius:8px;
+    width:100%;
+    max-width:800px; /* visual max width but allow parent to constrain */
+    box-sizing: border-box;
+}
+
+/* Ensure the panel establishes a new stacking context so z-index on menu works */
+.themis-character-panel{ position: relative; }
+
+.themis-character-menu{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    /* Reduced from 220px to ~176px (20% narrower) */
+    width:176px;
+    flex: 0 0 176px; /* fixed menu column without affecting layout outside the widget */
+
+/* Create a carved-in appearance for the entire menu column by using an inset
+   groove via a pseudo-element. This makes the menu read as 'cut into' the slab. */
+.themis-character-menu{
+    position: relative;
+    padding: 8px;
+    border-radius: 8px;
+    background: transparent; /* let the panel background show through */
+}
+.themis-character-menu::before{
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 8px;
+    pointer-events: none;
+    /* strong inner shadows to suggest a carved recess */
+    box-shadow: inset 0 8px 14px rgba(0,0,0,0.28), inset 0 -8px 10px rgba(255,255,255,0.28);
+}
+
+/* Force the menu and items to accept pointer events and sit above possible overlays */
+.themis-character-menu{ z-index: 50; pointer-events: auto; }
+.themis-character-menu-item{ pointer-events: auto; }
+}
+
+.themis-character-menu-item{
+    /* Carved sandstone button: no outer borders, inner bevel and text carving */
+    background: linear-gradient(180deg, color-mix(in srgb, var(--cm-item-bg) 90%, #fff 10%), var(--cm-item-bg));
+    /* use configurable font vars for unselected/default state */
+    font-family: var(--cm-item-font-family);
+    font-size: var(--cm-item-font-size);
+    font-style: var(--cm-item-font-style);
+    font-weight: var(--cm-item-font-weight-unselected);
+    color: var(--cm-item-font-color-unselected);
+    /* anchors should not look like links and should center their content */
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding:10px 12px;
+    border-radius:6px;
+    text-align: center;
+    cursor:pointer;
+    transition: background .18s, transform .18s, box-shadow .18s;
+    /* Slightly recessed by default to read as carved */
+    box-shadow: inset 0 2px 6px rgba(255,255,255,0.45), inset 0 -6px 10px rgba(0,0,0,0.12);
+    border: none;
+    position: relative;
+    z-index: 0;
+    /* subtle grain texture via overlay using linear-gradient */
+    background-image: linear-gradient(0deg, rgba(255, 255, 255, 0.02) 0%, rgba(0,0,0,0.02) 100%);
+    /* subtle light inset for text to enhance carved effect */
+    text-shadow: 0 1px 0 rgba(255,255,255,0.65), 0 -1px 0 rgba(0,0,0,0.12);
+}
+
+.themis-character-menu-item:focus{
+    outline: 2px solid rgba(181,118,58,0.18);
+    outline-offset: 2px;
+}
+
+.themis-character-menu-item:hover{
+    /* Pop upward toward the viewer: translateY negative and add external drop shadow */
+    transform: translateY(-8px);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--cm-item-hover) 85%, #fff 15%), var(--cm-item-hover));
+    box-shadow: 0 12px 22px rgba(0,0,0,0.22), inset 0 2px 6px rgba(255,255,255,0.35);
+    box-shadow: inset 0 2px 6px rgba(255,255,255,0.45), inset 0 -6px 10px rgba(0,0,0,0.12);
+    /* subtle light inset for text to enhance carved effect */
+    text-shadow: 0 1px 0 rgba(255,255,255,0.65), 0 -1px 0 rgba(0,0,0,0.12);
+}
+
+/* Ensure the content area can shrink in a flex container and wrap long content
+   rather than forcing overflow or squishing layout. */
+.themis-character-content{
+    min-width: 0; /* allows flex child to shrink below its content's intrinsic size */
+    overflow-wrap: anywhere; /* break long words/URLs when necessary */
+    word-break: break-word;
+}
+
+.themis-character-content-block{
+    min-width: 0; /* make sure nested blocks don't prevent shrinking */
+}
+
+/* Prevent large images or tables from forcing overflow */
+.themis-character-content img,
+.themis-character-content table{
+    max-width: 100%;
+    height: auto;
+    display: block;
+}
+
+.themis-character-menu-item.active{
+    /* deeper carved effect for active */
+    background: linear-gradient(180deg, color-mix(in srgb, var(--cm-item-bg) 70%, var(--cm-accent) 30%), var(--cm-item-bg));
+    box-shadow: inset 0 4px 10px rgba(0,0,0,0.18);
+    color: var(--cm-item-font-color-active);
+    font-weight: var(--cm-item-font-weight-active);
+}
+
+.themis-character-content{
+    background: var(--cm-content-bg);
+    flex:1 1 auto;
+    padding:14px;
+    border-radius:6px;
+    min-height:160px;
+    overflow:auto;
+    box-sizing: border-box; /* keep internal padding from leaking */
+    /* content surface should appear slightly recessed */
+    box-shadow: inset 0 2px 6px rgba(255,255,255,0.35), inset 0 -8px 14px rgba(0,0,0,0.06);
+    max-width: calc(100% - 196px); /* ensure it does not overflow parent when used inside small containers */
+}
+
+/* Form and textarea styles inside the character content */
+.themis-character-form{ display:flex; flex-direction:column; gap:8px; }
+.themis-form-textarea{
+    width:100%;
+    height:75%; /* occupy a larger portion of the content area by default */
+    min-height:200px; /* longer default minimum height */
+    max-height:70vh;
+    resize: vertical;
+    padding:10px;
+    border-radius:6px;
+    border: none;
+    box-shadow: inset 0 2px 6px rgba(255,255,255,0.45), inset 0 -6px 10px rgba(0,0,0,0.06);
+    font-family: var(--cm-item-font-family);
+    font-size: var(--cm-item-font-size);
+    color: var(--cm-item-font-color-unselected);
+    overflow:auto; /* allow vertical scrolling */
+    white-space: pre-wrap; /* wrap text */
+    word-break: break-word;
+}
+.themis-form-actions{ display:flex; gap:8px; align-items:center; }
+.themis-form-button{
+    /* Make form buttons visually match the carved menu buttons */
+    background: linear-gradient(180deg, color-mix(in srgb, var(--cm-item-bg) 90%, #fff 10%), var(--cm-item-bg));
+    padding:10px 14px;
+    border-radius:6px;
+    cursor:pointer;
+    border:none;
+    box-shadow: inset 0 2px 6px rgba(255,255,255,0.45), inset 0 -6px 10px rgba(0,0,0,0.12);
+    font-family: var(--cm-item-font-family);
+    font-size: var(--cm-item-font-size);
+    color: var(--cm-item-font-color-unselected);
+    text-shadow: 0 1px 0 rgba(255,255,255,0.65), 0 -1px 0 rgba(0,0,0,0.12);
+}
+.themis-form-button:hover{ transform: translateY(-4px); box-shadow: 0 8px 14px rgba(0,0,0,0.18), inset 0 2px 6px rgba(255,255,255,0.35); }
+
+.themis-character-content-block{
+    color:#6b5842; /* darker sandstone text */
+}
+
+.themis-character-content-block h3{
+    margin:0 0 8px 0;
+    color:var(--cm-accent);
+    text-shadow: 0 1px 0 rgba(255,255,255,0.6), 0 -1px 0 rgba(0,0,0,0.12);
+}
+
+.themis-character-content-block p{
+    margin:0;
+    color:var(--cm-muted);
+}
+
