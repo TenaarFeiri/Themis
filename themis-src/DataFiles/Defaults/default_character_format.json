@@ -1,0 +1,14 @@
+{
+    "name": "Character",
+    "description": "",
+    "health": "0",
+    "status": [
+        {
+            "isIc": "0",
+            "oocMessage": "",
+            "afkMessage": ""
+        }
+    ],
+    "color": "FFFFFF",
+    "hidden": "0"
+}
