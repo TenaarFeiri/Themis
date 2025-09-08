@@ -5,7 +5,7 @@ namespace Themis;
 header('Content-Type: text/plain; charset=utf-8');
 
 // Essential requires
-require_once 'ThemisErrorLog.php'; // Always first
+require_once 'StrictErrorHandler.php'; // register strict handlers and themis_error_log
 require_once 'Autoloader.php'; // Always second
 
 // System imports
