@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/ThemisErrorLog.php';
+require_once __DIR__ . '/StrictErrorHandler.php';
 
 /**
  * Registers an autoloader function for classes in the 'Themis' namespace.
