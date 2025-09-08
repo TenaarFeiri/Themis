@@ -3,160 +3,220 @@ declare(strict_types=1);
 namespace Themis\User;
 
 use Themis\System\ThemisContainer;
-use Themis\System\DataContainer;
 use Themis\System\DatabaseOperator;
 use Themis\System\DatabaseOperatorException;
-use Exception;
 use Themis\Utils\Exceptions\UserValidationException;
+use Exception;
+use PDOException;
+
+/**
+ * Lightweight, container-aware user validation helper.
+ *
+ * Responsibilities:
+ * - Keep a reference to ThemisContainer for optional helpers (legacy import, logging)
+ * - Provide methods that accept explicit input (uuid, name) and an optional DatabaseOperator
+ * - Never reach into headers or the DataContainer; the caller provides needed data
+ */
 class UserValidation {
     private ThemisContainer $container;
-    private DataContainer $dataContainer;
-    private bool $debug;
     private ?DatabaseOperator $db = null;
-    public function __construct(ThemisContainer $container) {
-        $this->container = $container;
-        if ($this->container->has('dataContainer')) {
-            $this->dataContainer = $this->container->get('dataContainer');
-        } else {
-            throw new UserValidationException("DataContainer is not bound in ThemisContainer");
-        }
-        $this->debug = $this->dataContainer->get('debug');
-        if ($this->debug) {
-            echo "UserValidation initialized with debug mode enabled.\n";
-        }
+    private bool $debug = false;
 
-        // Initiate the operator if it is configured in the container.
-        if ($this->container->has('databaseOperator')) {
-            $this->db = $this->container->get('databaseOperator');
-        } else {
-            throw new UserValidationException("DatabaseOperator is not bound in ThemisContainer");
-        }
+    /**
+     * Keep the container available for optional helpers. Do not wire DataContainer here.
+     */
+    public function __construct(ThemisContainer $container, bool $debug = false) {
+        $this->container = $container;
+        // Each UserValidation instance owns its own DatabaseOperator so
+        // transactional work here will not collide with caller transactions.
+        $this->db = new DatabaseOperator();
+        $this->debug = $debug;
     }
 
-    public function checkUserExists(): bool {
-        if ($this->debug) {
-            echo "Checking if user exists...\n";
-        }
+    /**
+     * Check whether a player exists by UUID and ensure the stored name is current.
+     * If the player does not exist this will attempt to register them (transaction handled here).
+     *
+     * Inputs are explicit; no global headers or DataContainer access.
+     *
+     * @param string $uuid Player UUID
+     * @param string $name Display name that should be persisted
+     * @param DatabaseOperator|null $db Optional DatabaseOperator; falls back to container if unset
+     * @return bool True on success (user exists or was created), false on error
+     * @throws UserValidationException When required dependencies are missing
+     */
+    public function checkUserExists(string $uuid, string $name): bool {
 
-        $slHeaders = $this->dataContainer->get('slHeaders');
-        $uuid = $slHeaders['HTTP_X_SECONDLIFE_OWNER_KEY'];
-        
-        $this->db = $this->container->get('databaseOperator');
-        $db = $this->db; // For brevity.
+        $db = $this->db;
+        if (!$db) {
+            throw new UserValidationException("DatabaseOperator not available on this UserValidation instance.");
+        }
 
         try {
             $db->connectToDatabase();
-            if ($db->hasConnection("default") === false) {
-                throw new Exception("Failed to connect to default database.");
+            if ($db->hasConnection(connectionName: "default") === false) {
+                throw new UserValidationException("Failed to connect to default database.");
             }
-            if (!$db->isCurrentConnection("default")) {
-                $db->useConnection("default"); // Should be used anyway but just in case the fucking faeries cursed us or something...
+            if (!$db->isCurrentConnection(connectionName: "default")) {
+                $db->useConnection(connectionName: "default");
             }
-            $user = $db->select(["*"], "players", ["player_uuid"], [(string)$uuid]);
-            if ($this->debug) {
-                echo "User: " . print_r($user, true) . "\n";
-            }
-            
+
+            $user = $db->select(select: ["*"], from: "players", where: ["player_uuid"], equals: [(string)$uuid]);
+
             if (empty($user)) {
-                $registerNewUser = $this->registerNewUser($uuid, $slHeaders['HTTP_X_SECONDLIFE_OWNER_NAME']);
-                switch ($registerNewUser) {
-                    case true:
-                        // Do legacy imports if necessary.
-                        $legacyImport = $this->container->get('userLegacyImport');
-                        if ($legacyImport->importLegacyData()) {
-                            // TODO log successful import.
-                            if ($this->debug) {
-                                echo "Legacy import successful.\n";
-                            }
-                        }
-                        return $registerNewUser;
-                        break;
+                // Attempt to create the user here using this instance's operator.
+                $created = $this->registerNewUser(uuid: $uuid, name: $name);
+                if (!$created) {
+                    return false;
                 }
+
+                // Optional legacy import if the container provides it
+                // TODO: Refactor.
+                /*if ($this->container->has('userLegacyImport')) {
+                    $legacy = $this->container->get('userLegacyImport');
+                    if (is_object($legacy) && method_exists($legacy, 'importLegacyData')) {
+                        try {
+                            $legacy->importLegacyData();
+                            if ($this->debug) {
+                                echo "Legacy import attempted after new user creation.\n";
+                            }
+                        } catch (\Throwable $e) {
+                            if ($this->debug) {
+                                echo "Legacy import failed: " . $e->getMessage() . "\n";
+                            }
+                            // Non-fatal: legacy import failure doesn't change registration outcome.
+                        }
+                    }
+                }*/
+
+                return true;
             }
-            
-            // User exists - check if name needs updating
-            $currentName = $slHeaders['HTTP_X_SECONDLIFE_OWNER_NAME'];
+
+            // If user exists, ensure the name is up-to-date
+            $currentName = (string)$name;
             if ($user[0]['player_name'] !== $currentName) {
-                $this->updateUserName($uuid, $currentName);
-                $user[0]['player_name'] = $currentName;
+                $this->updateUserName(uuid: $uuid, newName: $currentName);
             }
-            
+
+            return true;
         } catch (DatabaseOperatorException $e) {
             if ($this->debug) {
-                echo "Error: " . $e->getMessage() . "\n";
+                echo "Database error in checkUserExists: " . $e->getMessage() . "\n";
             }
             return false;
         }
-        $this->dataContainer->set('userData', $user[0]);
-        return true;
     }
 
-    private function registerNewUser(string $uuid, string $name): bool {
-        if ($this->debug) {
-            echo "User does not exist. Registering new user...\n";
+    /**
+     * Register a new player row. This method will start and commit/rollback its own transaction
+     * if the provided DatabaseOperator is not already in a transaction.
+     *
+     * @param string $uuid
+     * @param string $name
+     * @return bool
+     * @throws UserValidationException
+     */
+    public function registerNewUser(string $uuid, string $name): bool {
+        $db = $this->db;
+        if (!$db) {
+            throw new UserValidationException("DatabaseOperator not available on this UserValidation instance.");
         }
-        
+
+        $startedTransaction = false;
         try {
-            $this->db->beginTransaction();
-            
+            if (!$db->inTransaction()) {
+                $db->beginTransaction();
+                $startedTransaction = true;
+            }
+
             $pstTime = $this->getPstTimestamp();
-            $this->db->insert("players", 
-                ["player_name", "player_uuid", "player_created", "player_last_online"],
-                [(string)$name, (string)$uuid, $pstTime, $pstTime]
+            $db->insert(
+                into: "players",
+                columns: ["player_name", "player_uuid", "player_created", "player_last_online"],
+                values: [(string)$name, (string)$uuid, $pstTime, $pstTime]
             );
-            
-            $this->db->commitTransaction();
-            return $this->verifyRegistration($uuid);
-            
+
+            // Verify insertion
+            $newUser = $db->select(select: ["*"], from: "players", where: ["player_uuid"], equals: [(string)$uuid]);
+            if (empty($newUser)) {
+                if ($startedTransaction) {
+                    $db->rollbackTransaction();
+                }
+                if ($this->debug) {
+                    echo "Registration verification failed for {$uuid}\n";
+                }
+                return false;
+            }
+
+            if ($startedTransaction) {
+                $db->commitTransaction();
+            }
+
+            if ($this->debug) {
+                echo "User registered: " . print_r($newUser[0], true) . "\n";
+            }
+
+            return true;
         } catch (DatabaseOperatorException $e) {
-            $this->db->rollbackTransaction();
             if ($this->debug) {
-                echo "Registration failed: " . $e->getMessage() . "\n";
+                echo "Database error during registerNewUser: " . $e->getMessage() . "\n";
+            }
+            try {
+                if ($db->inTransaction()) {
+                    $db->rollbackTransaction();
+                }
+            } catch (DatabaseOperatorException $_) {
+                // swallow secondary errors
             }
             return false;
         }
     }
 
-    private function verifyRegistration(string $uuid): bool {
-        $newUser = $this->db->select(["*"], "players", ["player_uuid"], [(string)$uuid]);
-        if (empty($newUser)) {
-            if ($this->debug) {
-                echo "Registration failed - user not found after insert.\n";
-            }
-            return false;
-        }
-        
-        if ($this->debug) {
-            echo "User registered successfully: " . print_r($newUser, true) . "\n";
-            $this->dataContainer->set('userData', $newUser[0]);
-        }
-        return true;
-    }
-
+    /**
+     * Update a player's name in a safe transactional manner.
+     */
     private function updateUserName(string $uuid, string $newName): void {
-        if ($this->debug) {
-            echo "Updating user name to: {$newName}\n";
+        $db = $this->db;
+        if (!$db) {
+            throw new UserValidationException("DatabaseOperator not available on this UserValidation instance.");
         }
-        
+
+        if ($this->debug) {
+            echo "Updating name for {$uuid} -> {$newName}\n";
+        }
+
         try {
-            $this->db->beginTransaction();
-            
-            $this->db->update("players", 
-                ["player_name"], 
-                [(string)$newName], 
-                ["player_uuid"], 
-                [(string)$uuid]
+            $started = false;
+            if (!$db->inTransaction()) {
+                $db->beginTransaction();
+                $started = true;
+            }
+
+            $db->update(
+                table: "players",
+                columns: ["player_name"],
+                values: [(string)$newName],
+                where: ["player_uuid"],
+                equals: [(string)$uuid]
             );
-            
-            $this->db->commitTransaction();
-            
+
+            if ($started) {
+                $db->commitTransaction();
+            }
+
             if ($this->debug) {
-                echo "User name updated successfully.\n";
+                echo "Name update committed for {$uuid}\n";
             }
         } catch (DatabaseOperatorException $e) {
-            $this->db->rollbackTransaction();
+            try {
+                if ($db->inTransaction()) {
+                    $db->rollbackTransaction();
+                }
+            } catch (DatabaseOperatorException $_) {
+                // swallow
+            }
             if ($this->debug) {
-                echo "Failed to update user name: " . $e->getMessage() . "\n";
+                echo "Failed to update name for {$uuid}: " . $e->getMessage() . "\n";
             }
         }
     }
