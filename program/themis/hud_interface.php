@@ -81,6 +81,7 @@ class HudInterface {
     $this->dbOperator = $this->container->get('dbOperator');
   }
 
+  // Get the current character's name on first load, if possible.
   public function getCurrentCharacterName(): string {
     // Fetch character name from session data
     $id = $this->player['player_id'];
@@ -103,6 +104,7 @@ class HudInterface {
       return "Character not found";
     }
     $character = $character[0];
+    $_SESSION['character'] = $character; // Store character data in session for later use
 
     return $character['character_name'];
   }
@@ -126,7 +128,7 @@ try {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Themis HUD Interface</title>
-  <link rel="stylesheet" href="/src/css/hud_interface.css?v=1">
+  <link rel="stylesheet" href="/src/css/hud_interface.css?v=2">
 </head>
 <body>
   <div class="stage">
@@ -164,7 +166,7 @@ try {
     </div>
   </div>
 
-  <script src="/src/js/hud_interface.js?v=1" defer></script>
+  <script src="/src/js/hud_interface.js?v=2" defer></script>
 </body>
 </html>
 <?php session_write_close(); ?>
