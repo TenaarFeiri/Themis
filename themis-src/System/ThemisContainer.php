@@ -9,7 +9,7 @@ use Exception;
  *
  * Minimal dependency injection (DI) container for Themis.
  * Supports binding resolvers, resolving instances, circular dependency detection,
- * and management of bindings and instances. Future: consider auto-wiring.
+ * and management of bindings and instances.
  */
 
 final class ThemisContainer {
