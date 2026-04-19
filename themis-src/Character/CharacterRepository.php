@@ -5,6 +5,10 @@ namespace Themis\Character;
 // System
 use Themis\System\DatabaseOperator;
 
+// Character
+use Themis\Character\TitlerMode;
+use Themis\Character\TitlerPayloadBuilder;
+
 // Utils
 use Themis\Utils\JsonUtils;
 
@@ -14,16 +18,20 @@ use JsonException;
 use Throwable;
 use Themis\Utils\Exceptions\CharacterException;
 
-class CharacterRepository {
+class CharacterRepository
+{
     private ?DatabaseOperator $db = null;
+    private ?bool $hasCharacterModeColumn = null;
 
-    public function __construct() {
+    public function __construct()
+    {
         // When this is called, we're always going to do something in the database.
         $this->db = new DatabaseOperator();
         $this->db->connectToDatabase(); // Start the connection right away.
     }
 
-    public function getCharacterData(int $id): array {
+    public function getCharacterData(int $id): array
+    {
         if (!$this->db) {
             throw new CharacterException("Database connection is not established.");
         }
@@ -39,6 +47,13 @@ class CharacterRepository {
                 throw new CharacterException("Multiple characters found with the same ID: $id");
             }
             $character = $character[0]; // We only want the first result.
+
+            if ($this->hasCharacterModeColumn()) {
+                $character['character_mode'] = TitlerMode::normalize((string)($character['character_mode'] ?? TitlerMode::NORMAL));
+            } else {
+                $character['character_mode'] = $this->inferModeFromOptionsJson((string)($character['character_options'] ?? ''));
+            }
+
             return $character;
         } catch (JsonException $e) {
             throw new CharacterException("Failed to decode character data: " . $e->getMessage());
@@ -47,7 +62,8 @@ class CharacterRepository {
         }
     }
 
-    public function createNewCharacter(string $name, array $template, ?string $uuid = null): bool | int {
+    public function createNewCharacter(string $name, array $template, ?string $uuid = null): bool|int
+    {
         // Returns last insert id on success.
         if (!$this->db) {
             throw new CharacterException("Database connection is not established.");
@@ -74,14 +90,23 @@ class CharacterRepository {
                 throw new Exception("Failed to properly connect to database.");
             }
             $this->db->beginTransaction();
+
+            $columns = ["player_id", "character_name", "character_titler"];
+            $values = [
+                $user['player_id'],
+                $name,
+                JsonUtils::encode(data: $template, options: JSON_THROW_ON_ERROR)
+            ];
+
+            if ($this->hasCharacterModeColumn()) {
+                $columns[] = 'character_mode';
+                $values[] = TitlerMode::NORMAL;
+            }
+
             $insert = $this->db->insert(
                 into: "player_characters",
-                columns: ["player_id", "character_name", "character_titler"],
-                values: [
-                    $user['player_id'],
-                    $name,
-                    JsonUtils::encode(data: $template, options: JSON_THROW_ON_ERROR)
-                ]
+                columns: $columns,
+                values: $values
             );
             if ($insert === false) {
                 $this->db->rollbackTransaction();
@@ -93,7 +118,101 @@ class CharacterRepository {
             $this->db->rollbackTransaction();
             throw new CharacterException("An error occurred while creating a new character: " . $e->getMessage());
         }
-        return false;
+    }
+
+    public function setCharacterMode(int $characterId, string $mode): bool
+    {
+        if (!$this->db) {
+            throw new CharacterException("Database connection is not established.");
+        }
+
+        $mode = TitlerMode::normalize($mode);
+
+        try {
+            if ($this->hasCharacterModeColumn()) {
+                $updated = $this->db->update(
+                    table: 'player_characters',
+                    columns: ['character_mode'],
+                    values: [$mode],
+                    where: ['character_id'],
+                    equals: [$characterId]
+                );
+                return $updated === true;
+            }
+
+            // Backward compatibility if migration has not been applied yet.
+            $character = $this->getCharacterData($characterId);
+            $optionsRaw = (string)($character['character_options'] ?? '{}');
+            $options = json_decode($optionsRaw, true, 512, JSON_THROW_ON_ERROR);
+            if (!is_array($options)) {
+                $options = [];
+            }
+
+            $options['afk-ooc'] = $this->modeToLegacyCode($mode);
+            $encoded = JsonUtils::encode(data: $options, options: JSON_THROW_ON_ERROR);
+
+            $updated = $this->db->update(
+                table: 'player_characters',
+                columns: ['character_options'],
+                values: [$encoded],
+                where: ['character_id'],
+                equals: [$characterId]
+            );
+
+            return $updated === true;
+        } catch (Throwable $e) {
+            throw new CharacterException('Failed to set character mode: ' . $e->getMessage(), 0, $e);
+        }
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    public function buildTitlerPayload(int $characterId): array
+    {
+        $character = $this->getCharacterData($characterId);
+        $builder = new TitlerPayloadBuilder();
+        return $builder->build($character);
+    }
+
+    private function hasCharacterModeColumn(): bool
+    {
+        if ($this->hasCharacterModeColumn !== null) {
+            return $this->hasCharacterModeColumn;
+        }
+
+        if (!$this->db) {
+            $this->hasCharacterModeColumn = false;
+            return false;
+        }
+
+        $rows = $this->db->manualQuery("SHOW COLUMNS FROM player_characters LIKE 'character_mode'");
+        $this->hasCharacterModeColumn = !empty($rows);
+        return $this->hasCharacterModeColumn;
+    }
+
+    private function inferModeFromOptionsJson(string $optionsRaw): string
+    {
+        try {
+            $options = json_decode($optionsRaw, true, 512, JSON_THROW_ON_ERROR);
+            if (!is_array($options)) {
+                return TitlerMode::NORMAL;
+            }
+            return TitlerMode::fromLegacyAfkOoc($options['afk-ooc'] ?? 0);
+        } catch (Throwable) {
+            return TitlerMode::NORMAL;
+        }
+    }
+
+    private function modeToLegacyCode(string $mode): int
+    {
+        if ($mode === TitlerMode::OOC) {
+            return 1;
+        }
+        if ($mode === TitlerMode::AFK) {
+            return 2;
+        }
+        return 0;
     }
 
 }

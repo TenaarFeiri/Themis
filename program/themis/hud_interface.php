@@ -128,7 +128,7 @@ try {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Themis HUD Interface</title>
-  <link rel="stylesheet" href="/src/css/hud_interface.css?v=2">
+  <link rel="stylesheet" href="/src/css/hud_interface.css?v=3">
 </head>
 <body>
   <div class="stage">
@@ -158,6 +158,7 @@ try {
 
       <div class="controls">
         <button id="homeBtn">Home</button>
+        <button id="duelLabBtn" onclick="window.open('/themis/hud_duel_test.php','_blank','noopener');">Duel Lab</button>
       </div>
       <!-- Idle overlay: shown after inactivity, click to reactivate -->
       <div id="hudIdleOverlay" role="button" aria-hidden="true">
@@ -166,7 +167,7 @@ try {
     </div>
   </div>
 
-  <script src="/src/js/hud_interface.js?v=2" defer></script>
+  <script src="/src/js/hud_interface.js?v=4" defer></script>
 </body>
 </html>
 <?php session_write_close(); ?>

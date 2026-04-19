@@ -34,7 +34,14 @@ class DatabaseOperator {
         "rp_tool_character_repository",
         "player_tags",
         "launch_tokens",
-        "sessions"
+        "sessions",
+        "combat_instances",
+        "combat_instance_participants",
+        "combat_rounds",
+        "combat_round_actions",
+        "combat_presence",
+        "combat_npcs",
+        "combat_events"
     ];
 
     /**
@@ -89,7 +96,10 @@ class DatabaseOperator {
      * @throws DatabaseOperatorException If a transaction is active or the connection does not exist.
      */
     public function useConnection(string $connectionName): void {
-        if ($this->pdo->inTransaction()) {
+        if (!$this->hasConnection($connectionName)) {
+            throw new DatabaseOperatorException("Connection '{$connectionName}' does not exist.");
+        }
+        if ($this->pdo !== null && $this->pdo->inTransaction()) {
             throw new DatabaseOperatorException("Cannot change connection while in transaction.");
         }
         $this->whichPdo = $connectionName;
@@ -144,7 +154,7 @@ class DatabaseOperator {
      */
     public function manualQuery(string $query, array $params = []): array|int {
         // Forbid some destructive queries
-        if (preg_match(pattern: '/^(?:DELETE|DROP|TRUNCATE|REPLACE)/i', subject: $query)) {
+        if (preg_match(pattern: '/^\s*(?:DELETE|DROP|TRUNCATE|REPLACE)/i', subject: $query)) {
             throw new DatabaseOperatorException("Destructive queries are not allowed.");
         }
         $pdo = $this->getPdo();
@@ -230,7 +240,13 @@ class DatabaseOperator {
      */
     private function quoteIdentifier(string $identifier): string
     {
-        return "`" . str_replace("`", "``", $identifier) . "`";
+        $parts = explode('.', $identifier);
+        $quoted = array_map(
+            static fn(string $part): string => "`" . str_replace("`", "``", $part) . "`",
+            $parts
+        );
+
+        return implode('.', $quoted);
     }
 
 
@@ -289,7 +305,7 @@ class DatabaseOperator {
                 }
             }
         }
-        if (!in_array($from, self::TABLES)) {
+        if (!in_array($from, self::TABLES, true)) {
             throw new DatabaseOperatorException("Invalid table.");
         }
 
@@ -355,6 +371,11 @@ class DatabaseOperator {
             }
             // Allow comma-separated list in $orderedBy, quote each identifier safely.
             $cols = array_map('trim', explode(',', $orderedBy));
+            foreach ($cols as $c) {
+                if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/', $c)) {
+                    throw new DatabaseOperatorException("Invalid ORDER BY column: {$c}");
+                }
+            }
             $quoted = array_map(fn($c) => $this->quoteIdentifier($c), $cols);
             $dir = $ascending ? 'ASC' : 'DESC';
             $orderParts = [];
@@ -407,7 +428,7 @@ class DatabaseOperator {
         if (count($columns) !== count($values)) {
             throw new DatabaseOperatorException("Mismatched columns and values count.");
         }
-        if (!in_array($into, self::TABLES)) {
+        if (!in_array($into, self::TABLES, true)) {
             throw new DatabaseOperatorException("Invalid table.");
         }
 
@@ -451,7 +472,7 @@ class DatabaseOperator {
         if (count($columns) !== count($values)) {
             throw new DatabaseOperatorException("Mismatched columns and values count.");
         }
-        if (!in_array($table, self::TABLES)) {
+        if (!in_array($table, self::TABLES, true)) {
             throw new DatabaseOperatorException("Invalid table.");
         }
 

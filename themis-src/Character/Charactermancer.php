@@ -66,4 +66,19 @@ class Charactermancer {
         return false;
     }
 
+    public function setCharacterMode(int $id, string $mode): bool
+    {
+        $characterRepository = new CharacterRepository();
+        return $characterRepository->setCharacterMode($id, $mode);
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    public function buildTitlerPayload(int $id): array
+    {
+        $characterRepository = new CharacterRepository();
+        return $characterRepository->buildTitlerPayload($id);
+    }
+
 }

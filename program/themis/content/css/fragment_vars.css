@@ -1,0 +1,20 @@
+/* Shared fragment variables for carved-sandstone fragments
+   Keep fragment visual decisions here so profile/characters stay in sync.
+   This file is intentionally small and easy to edit. */
+:root{
+  --cm-hud-bg: #d6c9a6; /* light sandstone */
+  --cm-panel-bg: #bfae86; /* darker vein */
+  --cm-accent: #8a6a3a; /* accent color */
+  --cm-muted: #6b5842; /* muted text */
+  --cm-item-bg: #d9c7a3; /* menu item face */
+  --cm-item-hover: #cdb58b; /* hover tone */
+  --cm-content-bg: #efe6d861; /* content background (semi-transparent) */
+  /* Font controls for menu items */
+  --cm-item-font-family: 'Segoe UI', Roboto, Arial, Helvetica, sans-serif;
+  --cm-item-font-size: 16px;
+  --cm-item-font-style: normal;
+  --cm-item-font-weight-unselected: 500;
+  --cm-item-font-weight-active: 600;
+  --cm-item-font-color-unselected: color-mix(in srgb, var(--cm-muted) 72%, #292016 28%);
+  --cm-item-font-color-active: color-mix(in srgb, var(--cm-muted) 40%, #cdb58b 60%);
+}

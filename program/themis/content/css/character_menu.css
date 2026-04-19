@@ -1,8 +1,159 @@
+@import url('/themis/content/css/fragment_vars.css');
+
+/* Character fragment styles (carved sandstone look)
+   Namespaced to .themis-character-hud and `.themis-character-*` selectors so
+   they don't interfere with the global HUD. Keep this file focused and small.
+   Character-specific tm- variables live below; shared cm- variables are
+   imported from fragment_vars.css. */
+:root{
+  --tm-char-bg1: #d6c9a6; /* light sandstone */
+  --tm-char-bg2: #bfae86; /* darker vein */
+  --tm-char-ink: #3b2f23;
+  --tm-char-accent: #8a6a3a;
+  --tm-char-panel-radius: 10px;
+  --tm-char-gap: 12px;
+  --tm-char-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+}
+
+/* Shared helper: apply to any non-main fragment menu to opt into the
+   'confined carved menu' behavior. This keeps the carved background and
+   borders limited to the menu column and prevents the menu from stretching
+   to match the content pane. */
+.themis-fragment-menu{
+  align-self: flex-start;
+  height: auto;
+  overflow: visible;
+}
+
+.themis-character-hud{
+  font-family: var(--tm-char-font);
+  color: var(--tm-char-ink);
+}
+
+.themis-character-panel{
+  display:flex;
+  gap: var(--tm-char-gap);
+  align-items:flex-start;
+}
+
+.themis-character-menu{
+  width: 160px;
+  min-width:140px;
+  padding:14px;
+  background: linear-gradient(180deg, var(--tm-char-bg1), var(--tm-char-bg2));
+  border-radius: var(--tm-char-panel-radius);
+  box-shadow: inset 0 6px 14px rgba(0,0,0,0.12), 0 4px 8px rgba(0,0,0,0.08);
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  z-index:50; /* allow pointer interaction over overlays */
+  pointer-events:auto;
+  border: 1px solid rgba(0,0,0,0.06);
+  position:relative;
+}
+
+.themis-character-menu::before{
+  /* subtle carved edge at the top */
+  content: '';
+  position:absolute;
+  left:0; right:0; top:6px;
+  height:6px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.15), rgba(255,255,255,0));
+  border-top-left-radius: calc(var(--tm-char-panel-radius) - 4px);
+  border-top-right-radius: calc(var(--tm-char-panel-radius) - 4px);
+  pointer-events:none;
+}
+
+.themis-character-menu-item{
+  display:block;
+  text-decoration:none;
+  color:var(--tm-char-ink);
+  background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.02));
+  padding:8px 10px;
+  border-radius:6px;
+  text-align:left;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset;
+  border:1px solid rgba(0,0,0,0.04);
+  transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
+  font-weight:600;
+}
+
+.themis-character-menu-item:hover,
+.themis-character-menu-item:focus{
+  transform: translateY(-1px);
+  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(0,0,0,0.03));
+  outline: none;
+}
+
+.themis-character-menu-item[aria-pressed="true"],
+.themis-character-menu-item.active{
+  background: linear-gradient(180deg, rgba(138,106,58,0.15), rgba(0,0,0,0.06));
+  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+}
+
+.themis-character-content{
+  flex:1 1 auto;
+  min-width: 280px;
+  padding:12px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.01));
+  border-radius: var(--tm-char-panel-radius);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+  border:1px solid rgba(0,0,0,0.04);
+}
+
+.themis-character-content-block{
+  padding:10px;
+}
+
+.themis-character-content-block[hidden]{
+  display:none !important;
+}
+
+.themis-character-content-block h3{
+  margin:0 0 8px 0;
+  font-size:1.05rem;
+}
+
+.themis-character-content p{ color:var(--tm-char-ink); margin:0 0 10px 0; }
+
+/* Forms inside the fragment */
+.themis-character-form{ display:flex; flex-direction:column; gap:8px; }
+.themis-form-input, .themis-form-textarea{
+  border:1px solid rgba(0,0,0,0.08);
+  padding:8px 10px;
+  border-radius:6px;
+  font-family: inherit;
+  font-size:0.95rem;
+  background: rgba(255,255,255,0.6);
+  color: var(--tm-char-ink);
+}
+.themis-form-textarea{ min-height:80px; resize:vertical; }
+.themis-form-actions{ display:flex; gap:8px; justify-content:flex-end; }
+.themis-form-button{
+  background: linear-gradient(180deg, var(--tm-char-accent), #6f4e2a);
+  color:#fff; border:none; padding:8px 12px; border-radius:6px; cursor:pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+.themis-form-button:disabled{ opacity:0.6; cursor:default }
+
+/* responsive adjustments */
+@media (max-width:760px){
+  .themis-character-panel{ flex-direction:column; }
+  .themis-character-menu{ width:100%; display:flex; flex-direction:row; gap:8px; overflow:auto; }
+  .themis-character-menu-item{ flex:0 0 auto; white-space:nowrap; }
+}
+
+/* Accessibility helpers to ensure pointer-events when overlaying */
+.themis-character-menu, .themis-character-menu-item{ pointer-events:auto }
+
+/* keep rules resilient if loaded multiple times */
+/* end of file */
 /* HUD character menu styles — fully namespaced to avoid colliding with the global HUD */
 .themis-character-hud{
     /* Sandstone palette (namespaced) */
-    --cm-hud-bg: #f0e6d200; /* light sandstone */
-    --cm-panel-bg: #e1cfa800; /* warm mid tone */
+  /* Match profile fragment's menu background to ensure uniformity */
+  --cm-hud-bg: #d6c9a6; /* light sandstone (match profile) */
+  --cm-panel-bg: #bfae86; /* darker vein (match profile) */
     --cm-accent: #b5763a; /* darker accent for headings */
     --cm-muted: #6b5842; /* muted text */
     --cm-item-bg: #d9c7a359; /* menu item face */
@@ -26,8 +177,8 @@
 .themis-character-panel{
     display:flex;
     gap:12px;
-    /* remove outer shadow and border for a flat carved look; use subtle inner shading */
-    background: linear-gradient(180deg, var(--cm-panel-bg), color-mix(in srgb, var(--cm-panel-bg) 80%, var(--cm-hud-bg)) );
+  /* keep panel neutral; carved background should live only on the menu column */
+  background: transparent;
     padding:12px;
     border-radius:8px;
     width:100%;
@@ -52,7 +203,8 @@
     position: relative;
     padding: 8px;
     border-radius: 8px;
-    background: transparent; /* let the panel background show through */
+  /* Match profile/character background vars so appearance is identical */
+  background: linear-gradient(180deg, var(--cm-hud-bg), var(--cm-panel-bg));
 }
 .themis-character-menu::before{
     content: '';
@@ -60,8 +212,8 @@
     inset: 0;
     border-radius: 8px;
     pointer-events: none;
-    /* strong inner shadows to suggest a carved recess */
-    box-shadow: inset 0 8px 14px rgba(0,0,0,0.28), inset 0 -8px 10px rgba(255,255,255,0.28);
+  /* softened inner shadows to match profile carved edge */
+  box-shadow: inset 0 6px 12px rgba(0,0,0,0.18), inset 0 -6px 8px rgba(255,255,255,0.18);
 }
 
 /* Force the menu and items to accept pointer events and sit above possible overlays */
@@ -105,13 +257,12 @@
 }
 
 .themis-character-menu-item:hover{
-    /* Pop upward toward the viewer: translateY negative and add external drop shadow */
-    transform: translateY(-8px);
-    background: linear-gradient(180deg, color-mix(in srgb, var(--cm-item-hover) 85%, #fff 15%), var(--cm-item-hover));
-    box-shadow: 0 12px 22px rgba(0,0,0,0.22), inset 0 2px 6px rgba(255,255,255,0.35);
-    box-shadow: inset 0 2px 6px rgba(255,255,255,0.45), inset 0 -6px 10px rgba(0,0,0,0.12);
-    /* subtle light inset for text to enhance carved effect */
-    text-shadow: 0 1px 0 rgba(255,255,255,0.65), 0 -1px 0 rgba(0,0,0,0.12);
+  /* Pop upward toward the viewer: modest translate to match profile */
+  transform: translateY(-4px);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--cm-item-hover) 85%, #fff 15%), var(--cm-item-hover));
+  /* use inset lighting and a modest drop shadow similar to profile */
+  box-shadow: inset 0 2px 6px rgba(255,255,255,0.45), inset 0 -6px 10px rgba(0,0,0,0.12);
+  text-shadow: 0 1px 0 rgba(255,255,255,0.65), 0 -1px 0 rgba(0,0,0,0.12);
 }
 
 /* Ensure the content area can shrink in a flex container and wrap long content

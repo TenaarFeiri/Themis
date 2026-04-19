@@ -1,64 +1,89 @@
 <?php
+declare(strict_types=1);
+
 require_once __DIR__ . '/StrictErrorHandler.php';
 
 /**
- * Registers an autoloader function for classes in the 'Themis' namespace.
+ * Lightweight PSR-4 style autoloader for Themis classes.
  *
- * @param string $srcDir   The source directory containing class files. Defaults to 'themis-src'.
- * @param int    $dirDepth The number of parent directories to traverse from the current directory to locate the base directory. Defaults to 2.
+ * Default mapping:
+ * - Namespace prefix: Themis\\
+ * - Base directory: /var/www/themis-src/
  */
-function setAutoloader(string $srcDir = 'themis-src', int $dirDepth = 2): void
+final class ThemisAutoloader
 {
-    static $registered = false;
-    if ($registered) {
-        return;
+    private bool $registered = false;
+
+    public function __construct(
+        private readonly string $namespacePrefix,
+        private readonly string $baseDirectory,
+    ) {
     }
-    // Normalize srcDir to avoid accidental double slashes
-    $srcDir = rtrim($srcDir, '/');
 
-    spl_autoload_register(function ($class) use ($srcDir, $dirDepth) {
-        $prefix = 'Themis\\';
-        $baseDir = dirname(__DIR__, $dirDepth) . '/' . $srcDir . '/';
-
-        // If the computed base directory doesn't exist, log an informational message.
-        // By design this autoloader is placed alongside Init.php; moving it changes dirname(__DIR__, $dirDepth).
-        if (!is_dir($baseDir)) {
-            themis_error_log(sprintf(
-                "Autoloader: computed baseDir '%s' does not exist. Autoloader.php is expected to remain in the same directory as Init.php; move it back or adjust dirDepth/srcDir.",
-                $baseDir
-            ));
+    public function register(bool $prepend = false): void
+    {
+        if ($this->registered) {
+            return;
         }
 
-        // Check if the class uses the namespace prefix
-        $len = strlen($prefix);
-        if (strncmp($prefix, $class, $len) !== 0) {
-            return; // not our namespace
+        spl_autoload_register([$this, 'autoload'], true, $prepend);
+        $this->registered = true;
+    }
+
+    public function autoload(string $class): void
+    {
+        $prefixLength = strlen($this->namespacePrefix);
+        if (strncmp($this->namespacePrefix, $class, $prefixLength) !== 0) {
+            return;
         }
 
-        $relativeClass = substr($class, $len);
-        $file = $baseDir . str_replace('\\', '/', $relativeClass) . '.php';
+        $relativeClass = substr($class, $prefixLength);
+        $relativePath = str_replace('\\', DIRECTORY_SEPARATOR, $relativeClass) . '.php';
+        $file = $this->baseDirectory . $relativePath;
 
-        // Prefer readable check to ensure file can actually be required.
         if (is_readable($file)) {
             require_once $file;
             return;
         }
 
-        // Class file not found or unreadable: log and terminate, this is a fatal error for the application.
-        themis_error_log(sprintf(
-            "Autoloader: Class '%s' not found or not readable at '%s' (prefix='%s', baseDir='%s'). Shutting down.",
-            $class,
-            $file,
-            $prefix,
-            $baseDir
-        ));
-        exit(1);
-    });
-
-    $registered = true;
+        // Autoloaders should not terminate the process.
+        themis_error_log(
+            sprintf(
+                "Autoloader miss: class '%s' expected at '%s'",
+                $class,
+                $file
+            )
+        );
+    }
 }
 
-// Auto-register the autoloader when this file is included.
-// This makes using the library simpler: including Autoloader.php is sufficient.
-setAutoloader();
+/**
+ * Backwards-compatible function wrapper used by legacy entrypoints.
+ */
+function setAutoloader(string $srcDir = 'themis-src', int $dirDepth = 2): void
+{
+    static $loader = null;
 
+    if ($loader instanceof ThemisAutoloader) {
+        return;
+    }
+
+    $srcDir = trim($srcDir, '/');
+    $basePath = dirname(__DIR__, $dirDepth) . DIRECTORY_SEPARATOR . $srcDir . DIRECTORY_SEPARATOR;
+
+    if (!is_dir($basePath)) {
+        themis_error_log(
+            sprintf(
+                "Autoloader base directory does not exist: '%s' (dirDepth=%d, srcDir='%s')",
+                $basePath,
+                $dirDepth,
+                $srcDir
+            )
+        );
+    }
+
+    $loader = new ThemisAutoloader('Themis\\', $basePath);
+    $loader->register();
+}
+
+setAutoloader();

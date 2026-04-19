@@ -28,7 +28,21 @@ function themis_error_log(string $message, bool $debug = false, string $logname 
 
     // Ensure log directory exists
     if (!is_dir($logDir)) {
-        mkdir($logDir, 0777, true);
+        if (!@mkdir($logDir, 0777, true) && !is_dir($logDir)) {
+            @error_log('[Themis] ' . $message);
+            if ($debug) {
+                echo PHP_EOL, "ERROR (debug msg): ", PHP_EOL, $message, PHP_EOL;
+            }
+            return;
+        }
+    }
+
+    if (!is_writable($logDir)) {
+        @error_log('[Themis] ' . $message);
+        if ($debug) {
+            echo PHP_EOL, "ERROR (debug msg): ", PHP_EOL, $message, PHP_EOL;
+        }
+        return;
     }
 
     // Rotate if needed
@@ -38,13 +52,16 @@ function themis_error_log(string $message, bool $debug = false, string $logname 
         foreach (glob($logDir . "{$logname}_*.log") as $old) {
             @unlink($old);
         }
-        rename($logFile, $rotated);
-        touch($logFile);
-        chmod($logFile, 0666);
+        @rename($logFile, $rotated);
+        @touch($logFile);
+        @chmod($logFile, 0666);
     }
 
     $entry = '[' . date('Y-m-d H:i:s') . '] ' . $message . PHP_EOL;
-    error_log($entry, 3, $logFile);
+    $ok = @error_log($entry, 3, $logFile);
+    if ($ok === false) {
+        @error_log('[Themis] ' . $message);
+    }
     if ($debug) {
         echo PHP_EOL, "ERROR (debug msg): ", PHP_EOL, $entry, PHP_EOL;
     }
